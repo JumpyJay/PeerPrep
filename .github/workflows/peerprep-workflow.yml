@@ -1,0 +1,26 @@
+name: PeerPrep Workflow
+
+# only runs the CI when PR to main branch
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container:
+      image: node:20-alpine
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      # in case have test cases later!!
+      # - name: Run tests
+      #   run: npm test
+
+      - name: Build project
+        run: npm run build
