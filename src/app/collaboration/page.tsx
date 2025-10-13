@@ -3,6 +3,8 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Session } from "@/modules/collaboration/session.types";
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export default function CollaborationPage() {
@@ -123,8 +125,19 @@ export default function CollaborationPage() {
                     </div>
                   </div>
 
-                  <div className="hidden sm:block text-xs font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-1 rounded-md ml-4">
-                    {session.session_id}
+                  {/* --- Session ID + Right Arrow --- */}
+                  <div className="flex items-center space-x-3 ml-4">
+                    <div className="hidden sm:block text-xs font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-1 rounded-md">
+                      {session.session_id}
+                    </div>
+
+                    {/* Navigation Arrow */}
+                    <Link href={`collaboration/sessions/${session.session_id}`}>
+                      <ArrowRight
+                        className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
+                        aria-label="View session details"
+                      />
+                    </Link>
                   </div>
                 </div>
               </Card>
