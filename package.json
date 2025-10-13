@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google-cloud/cloud-sql-connector": "^1.8.4",
+    "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
     "class-variance-authority": "^0.7.1",
