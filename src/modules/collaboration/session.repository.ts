@@ -33,4 +33,4 @@ export class SessionRepository {
 }
 
 // export a singleton instance of the repository
-export const userRepository = new SessionRepository();
+export const sessionRepository = new SessionRepository();
