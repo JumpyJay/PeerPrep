@@ -19,9 +19,9 @@ export default function CollaborationPage() {
     return username.substring(0, 2).toUpperCase();
   };
 
-  const fetchQuestionInfoFromID = (id: string) => {
-    // fetch question database and find one of matching id
-  };
+  // const fetchQuestionInfoFromID = (id: string) => {
+  //   // fetch question database and find one of matching id
+  // };
 
   useEffect(() => {
     // on mount fetch all sessions from api endpoint
