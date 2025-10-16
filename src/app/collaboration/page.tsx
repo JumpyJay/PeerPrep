@@ -73,7 +73,7 @@ export default function CollaborationPage() {
             All Sessions
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Here's a list of all currently active user sessions.
+            {"Here's a list of all currently active user sessions."}
           </p>
         </header>
 
