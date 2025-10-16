@@ -1,8 +1,8 @@
 // src/app/api/v1/collaboration/route.ts
 
 import { NextResponse } from "next/server";
-import { sessionService } from "@/modules/collaboration/session.service";
-import { Session } from "@/modules/collaboration/session.types";
+import { questionService } from "@/modules/question/question.service";
+import { Question } from "@/modules/question/question.types";
 
 /**
  * handles GET requests to /api/v1/question
@@ -10,15 +10,15 @@ import { Session } from "@/modules/collaboration/session.types";
 export async function GET() {
   try {
     // 1. Call your service layer to get data
-    const sessions: Session[] = await sessionService.getAllSessions();
+    const questions: Question[] = await questionService.getAllQuestions();
 
     // 2. Return a successful JSON response
-    return NextResponse.json(sessions, { status: 200 });
+    return NextResponse.json(questions, { status: 200 });
   } catch (error) {
     // 3. Handle errors
     console.error("API Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch sessions." },
+      { error: "Failed to fetch questions." },
       { status: 500 }
     );
   }
