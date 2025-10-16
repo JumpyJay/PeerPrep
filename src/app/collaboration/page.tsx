@@ -19,6 +19,10 @@ export default function CollaborationPage() {
     return username.substring(0, 2).toUpperCase();
   };
 
+  const fetchQuestionInfoFromID = (id: string) => {
+    // fetch question database and find one of matching id
+  };
+
   useEffect(() => {
     // on mount fetch all sessions from api endpoint
     const fetchSessions = async () => {
@@ -66,7 +70,7 @@ export default function CollaborationPage() {
       <div className="max-w-2xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Active Sessions
+            All Sessions
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
             Here's a list of all currently active user sessions.
@@ -148,7 +152,7 @@ export default function CollaborationPage() {
         {sessions.length === 0 && (
           <Card className="text-center p-12">
             <CardTitle className="text-gray-700 dark:text-gray-300">
-              No Active Sessions
+              No Sessions
             </CardTitle>
             <CardDescription>
               When a new session starts, it will appear here.
