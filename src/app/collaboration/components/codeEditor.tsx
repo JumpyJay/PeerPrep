@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { io } from "socket.io-client";
+import Quill from "quill";
+import "quill/dist/quill.snow.css";
 
 const defaultCode = `function twoSum(nums: number[], target: number): number[] {
     // Write your solution here
@@ -10,8 +13,21 @@ const defaultCode = `function twoSum(nums: number[], target: number): number[] {
 };`;
 
 export function CodeEditor() {
+  const [socket, setSocket] = useState<any>(null);
   const [code, setCode] = useState(defaultCode);
   const [language, setLanguage] = useState("typescript");
+
+  useEffect(() => {
+    // connect to socket.io server
+    const s = io("http://localhost:3001");
+    setSocket(s);
+    s.on("connect", () => {
+      console.log("Connected to server");
+    });
+    return () => {
+      s.disconnect();
+    };
+  }, []);
 
   return (
     <div className="flex w-1/2 flex-col">
