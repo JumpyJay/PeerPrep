@@ -16,7 +16,9 @@ export interface QuestionSelectionParams {
   windowDays?: number; // repeat-avoidance window in days
 }
 
-export interface QuestionWithSolution extends Question {}
+// QuestionWithSolution is an alias for Question type
+// Used for semantic clarity when returning questions with their solutions
+export type QuestionWithSolution = Question;
 
 export interface QuestionSolution {
   question_id: number;

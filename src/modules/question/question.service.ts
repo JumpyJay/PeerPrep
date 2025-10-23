@@ -39,7 +39,7 @@ export class QuestionService {
     if (params.user) {
       try {
         excludeIds = await this.repository.findRecentlyServedQuestionIds(params.user, windowDays);
-      } catch (e) {
+      } catch {
         // Log and continue without exclusion if history table not ready
         console.warn("selectQuestion: could not fetch recent history; proceeding without exclusion.");
       }
@@ -64,7 +64,7 @@ export class QuestionService {
     if (selected && params.user) {
       try {
         await this.repository.recordServed(params.user, selected.question_id);
-      } catch (e) {
+      } catch {
         console.warn("selectQuestion: could not record served question.");
       }
     }
