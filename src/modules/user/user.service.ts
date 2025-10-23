@@ -58,7 +58,7 @@ export async function login(data: UserCredentials) {
   }
 
   // creates signed token 
-  const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1d" });
+  const token = jwt.sign({ id: user.email }, JWT_SECRET, { expiresIn: "1d" });
 
   return { success: true, status: 200, message: "Login successful", token, user };
 }
@@ -66,10 +66,10 @@ export async function login(data: UserCredentials) {
 /**
  * Fetches current user.
  */
-export async function getProfile(id: number) {
+export async function getProfile(email: string) {
   try {
     // checks for existing user in db using id checks
-    const user = await userRepository.findUserById(id);
+    const user = await userRepository.findUserByEmail(email);
 
     if (!user) {
       return { success: false, status: 404, message: "User not found" };
