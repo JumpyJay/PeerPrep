@@ -73,13 +73,13 @@ export class QuestionRepository {
     }
     const client = await this.pool.connect();
     try {
-      const result = await client.query(
+      const result = await client.query<{ question_id: number }>(
         `SELECT question_id
          FROM question_served
          WHERE user_id = $1 AND served_at >= NOW() - ($2 || ' days')::interval`,
         [user, windowDays]
       );
-      return result.rows.map((r: any) => r.question_id as number);
+      return result.rows.map((r) => r.question_id);
     } catch (error) {
       console.error("Error fetching recently served question ids:", error);
       throw new Error("Could not retrieve recently served question ids.");
@@ -101,7 +101,8 @@ export class QuestionRepository {
     const client = await this.pool.connect();
     try {
       const conditions: string[] = [];
-      const params: any[] = [];
+      type SqlParam = string | number | string[] | number[];
+      const params: SqlParam[] = [];
 
       if (criteria.difficulty) {
         params.push(criteria.difficulty);
