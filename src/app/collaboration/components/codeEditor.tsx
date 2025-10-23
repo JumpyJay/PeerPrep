@@ -6,11 +6,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { io } from "socket.io-client";
 import "quill/dist/quill.snow.css";
 
+interface CodeEditorProps {
+  sessionId: number;
+}
+
 const defaultCode = `function twoSum(nums: number[], target: number): number[] {
   // Write your solution here
 };`;
 
-export function CodeEditor() {
+export function CodeEditor(params: CodeEditorProps) {
   // store quill and socket instance that persists between re-render
   const quillRef = useRef<any>(null);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
@@ -74,7 +78,8 @@ export function CodeEditor() {
         q.root.classList.add("font-mono");
 
         // Seed content
-        q.setText(defaultCode);
+        q.disable();
+        q.setText("loading...");
 
         // attach handler
         const onTextChange = (delta: any, _old: any, source: string) => {

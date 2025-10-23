@@ -2,7 +2,11 @@
 import { QuestionPanel } from "./questionPanel";
 import { CodeEditor } from "./codeEditor";
 
-export function CodingInterface() {
+interface CodingInterfaceProps {
+  sessionId: number;
+}
+
+export function CodingInterface(params: CodingInterfaceProps) {
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
@@ -11,6 +15,7 @@ export function CodingInterface() {
           <h1 className="font-mono text-lg font-semibold text-foreground">
             PeerPrep
           </h1>
+          <h3>{"sessionId" + params.sessionId}</h3>
         </div>
         <div className="flex items-center gap-2">
           <button className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
@@ -28,7 +33,7 @@ export function CodingInterface() {
         <QuestionPanel />
 
         {/* Right Panel - Code Editor */}
-        <CodeEditor />
+        <CodeEditor sessionId={params.sessionId} />
       </div>
     </div>
   );
