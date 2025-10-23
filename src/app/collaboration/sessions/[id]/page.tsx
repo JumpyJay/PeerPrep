@@ -6,6 +6,5 @@ import { useParams } from "next/navigation";
 export default function CollaborationPage() {
   const params = useParams();
   const sessionId = Number(params.id);
-  console.log("sessionId", sessionId);
   return <CodingInterface sessionId={sessionId} />;
 }

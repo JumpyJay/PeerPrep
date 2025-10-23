@@ -78,75 +78,79 @@ export default function CollaborationPage() {
         </header>
 
         <ul className="space-y-4">
-          {sessions.map((session) => (
-            <li key={session.session_id}>
-              <Card>
-                <div className="flex items-center justify-between p-4">
-                  <div className="flex items-center space-x-2 sm:space-x-4 flex-1 min-w-0">
-                    {/* --- user 1 --- */}
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <Avatar>
-                        <AvatarFallback>
-                          {getInitialsFromEmail(session.user1_email)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="truncate">
-                        <p className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">
-                          {session.user1_email}
-                        </p>
+          {[...sessions]
+            .sort((a, b) => a.session_id - b.session_id) // sort ascending alphabetically
+            .map((session) => (
+              <li key={session.session_id}>
+                <Card>
+                  <div className="flex items-center justify-between p-4">
+                    <div className="flex items-center space-x-2 sm:space-x-4 flex-1 min-w-0">
+                      {/* --- user 1 --- */}
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <Avatar>
+                          <AvatarFallback>
+                            {getInitialsFromEmail(session.user1_email)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="truncate">
+                          <p className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">
+                            {session.user1_email}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* --- connector --- */}
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-5 w-5 text-gray-400 dark:text-gray-500 flex-shrink-0"
+                      >
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.72"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.72"></path>
+                      </svg>
+
+                      {/* --- user 2 --- */}
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <Avatar>
+                          <AvatarFallback>
+                            {getInitialsFromEmail(session.user2_email)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="truncate">
+                          <p className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">
+                            {session.user2_email}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
-                    {/* --- connector --- */}
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="24"
-                      height="24"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-5 w-5 text-gray-400 dark:text-gray-500 flex-shrink-0"
-                    >
-                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.72"></path>
-                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.72"></path>
-                    </svg>
-
-                    {/* --- user 2 --- */}
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <Avatar>
-                        <AvatarFallback>
-                          {getInitialsFromEmail(session.user2_email)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="truncate">
-                        <p className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">
-                          {session.user2_email}
-                        </p>
+                    {/* --- Session ID + Right Arrow --- */}
+                    <div className="flex items-center space-x-3 ml-4">
+                      <div className="hidden sm:block text-xs font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-1 rounded-md">
+                        {session.session_id}
                       </div>
+
+                      {/* Navigation Arrow */}
+                      <Link
+                        href={`collaboration/sessions/${session.session_id}`}
+                      >
+                        <ArrowRight
+                          className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
+                          aria-label="View session details"
+                        />
+                      </Link>
                     </div>
                   </div>
-
-                  {/* --- Session ID + Right Arrow --- */}
-                  <div className="flex items-center space-x-3 ml-4">
-                    <div className="hidden sm:block text-xs font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-1 rounded-md">
-                      {session.session_id}
-                    </div>
-
-                    {/* Navigation Arrow */}
-                    <Link href={`collaboration/sessions/${session.session_id}`}>
-                      <ArrowRight
-                        className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
-                        aria-label="View session details"
-                      />
-                    </Link>
-                  </div>
-                </div>
-              </Card>
-            </li>
-          ))}
+                </Card>
+              </li>
+            ))}
         </ul>
 
         {sessions.length === 0 && (
