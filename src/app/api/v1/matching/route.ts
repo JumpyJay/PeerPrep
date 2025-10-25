@@ -14,13 +14,9 @@ export const runtime = "nodejs";
 
 const JSON_HEADERS = { "content-type": "application/json" as const };
 
-/**
- * -----------------------------------------------------------------
+/** --------------------------------------------------------------
  * CORS helper
- * -----------------------------------------------------------------
- * Wrap every response with permissive CORS headers so local
- * UIs, Postman, and other origins can call this API reliably.
- */
+ * -------------------------------------------------------------- */
 function withCors(res: NextResponse) {
   res.headers.set("Access-Control-Allow-Origin", "*");
   res.headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
@@ -41,17 +37,25 @@ function serverError(message: string) {
   );
 }
 
-/**
- * ---------------------------------------------------
+/** --------------------------------------------------------------
+ * Utils
+ * -------------------------------------------------------------- */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+/** --------------------------------------------------------------
  * Legacy -> Canonical adapters (API boundary only)
- * ---------------------------------------------------
+ * --------------------------------------------------------------
  * Accepts snake_case keys and friendly strings (e.g. "Easy"),
  * then converts to the canonical shapes validated by Zod.
  * Keeps domain/service layers strictly typed and clean.
  */
 
 // POST /enqueue body adapter
-function normalizeEnqueue(raw: any) {
+function normalizeEnqueue(raw: unknown) {
+  if (!isRecord(raw)) return raw;
+
   const difficultyMap = { easy: "EASY", medium: "MEDIUM", hard: "HARD" } as const;
   const skillMap = {
     beginner: "BEGINNER",
@@ -59,25 +63,48 @@ function normalizeEnqueue(raw: any) {
     advanced: "ADVANCED",
   } as const;
 
-  // Accept multiple key variants for each field
-  const userId = raw.userId ?? raw.user_id ?? raw.user ?? raw.email ?? "";
+  const userId =
+    (raw.userId as unknown) ??
+    raw.user_id ??
+    raw.user ??
+    raw.email ??
+    "";
 
-  const diffRaw = raw.difficulty ?? raw.Difficulty ?? raw.level ?? "";
+  const diffRaw =
+    (raw.difficulty as unknown) ??
+    raw.Difficulty ??
+    raw.level ??
+    "";
+
   const skillRaw =
-    raw.skillLevel ?? raw.skill_level ?? raw.skill ?? raw.proficiency ?? "";
+    (raw.skillLevel as unknown) ??
+    raw.skill_level ??
+    raw.skill ??
+    raw.proficiency ??
+    "";
 
-  const topics = raw.topics ?? raw.tags ?? [];
-  const strictMode = raw.strictMode ?? raw.strict_mode ?? raw.strict ?? false;
+  const topics = (raw.topics as unknown) ?? raw.tags ?? [];
+  const strictMode =
+    (raw.strictMode as unknown) ??
+    raw.strict_mode ??
+    raw.strict ??
+    false;
   const timeoutSeconds =
-    raw.timeoutSeconds ?? raw.timeout_seconds ?? raw.timeout ?? undefined;
+    (raw.timeoutSeconds as unknown) ??
+    raw.timeout_seconds ??
+    raw.timeout ??
+    undefined;
 
   // Normalize friendly strings to enums if needed
   const difficulty =
-    difficultyMap[String(diffRaw).toLowerCase() as keyof typeof difficultyMap] ??
-    diffRaw; // already-canonical OK
+    difficultyMap[
+      String(diffRaw).toLowerCase() as keyof typeof difficultyMap
+    ] ?? diffRaw;
+
   const skillLevel =
-    skillMap[String(skillRaw).toLowerCase() as keyof typeof skillMap] ??
-    skillRaw; // already-canonical OK
+    skillMap[
+      String(skillRaw).toLowerCase() as keyof typeof skillMap
+    ] ?? skillRaw;
 
   // Soft signal that someone still posts legacy payloads
   const usedLegacy =
@@ -90,7 +117,7 @@ function normalizeEnqueue(raw: any) {
       "[matching] legacy enqueue payload normalized; please migrate to { userId, difficulty, topics, skillLevel, strictMode }"
     );
   }
-  
+
   // Canonical shape consumed by Zod -> service layer
   const canonical = {
     userId,
@@ -107,14 +134,17 @@ function normalizeEnqueue(raw: any) {
 }
 
 // Minimal adapter for actions that only need ticketId
-function normalizeTicketOnly(raw: any) {
+function normalizeTicketOnly(raw: unknown) {
+  if (!isRecord(raw)) return raw;
   const usedLegacy = "ticket_id" in raw;
   if (usedLegacy) console.warn("[matching] legacy ticket_id normalized → ticketId");
-  return { ticketId: raw.ticketId ?? raw.ticket_id };
+  return { ticketId: (raw.ticketId as unknown) ?? raw.ticket_id };
 }
 
 // Adapter for relax action body (accept multiple legacy variants)
-function normalizeRelax(raw: any) {
+function normalizeRelax(raw: unknown) {
+  if (!isRecord(raw)) return raw;
+
   const usedLegacy =
     "ticket_id" in raw ||
     "relax_difficulty" in raw ||
@@ -129,63 +159,59 @@ function normalizeRelax(raw: any) {
   }
 
   return {
-    ticketId: raw.ticketId ?? raw.ticket_id,
+    ticketId: (raw.ticketId as unknown) ?? raw.ticket_id,
     relaxDifficulty:
-      raw.relaxDifficulty ?? raw.relax_difficulty ?? raw.relax ?? undefined,
-    relaxTopics: raw.relaxTopics ?? raw.relax_topics ?? undefined,
-    relaxSkill: raw.relaxSkill ?? raw.relax_skill ?? undefined,
-    extendSeconds: raw.extendSeconds ?? raw.extend_seconds ?? undefined,
+      (raw.relaxDifficulty as unknown) ??
+      raw.relax_difficulty ??
+      raw.relax ??
+      undefined,
+    relaxTopics:
+      (raw.relaxTopics as unknown) ??
+      raw.relax_topics ??
+      undefined,
+    relaxSkill:
+      (raw.relaxSkill as unknown) ??
+      raw.relax_skill ??
+      undefined,
+    extendSeconds:
+      (raw.extendSeconds as unknown) ??
+      raw.extend_seconds ??
+      undefined,
   };
-}
-
-/**
- * Extract a session identifier from whatever shape the
- * repositry/service returns (supports both snake/camel).
- */
-function getSessionIdFromResult(result: any): string | null {
-  return (
-    result?.session_id ??
-    result?.sessionId ??
-    result?.pair_id ??
-    result?.pairId ??
-    null
-  );
 }
 
 // DI: tell MatchingService how to create a collaboration session
 // Temporary stub so session_id exists immediately
-MatchingService.setCollaborationCreator(async ({ userA, userB, questionId }) => {
-  // generate a stable session id so UI can navigate
-  // replace with real API call when collaboration API POST is ready.
-  const id = globalThis.crypto?.randomUUID?.()
-  ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+MatchingService.setCollaborationCreator(async () => {
+  const id =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return { session_id: id };
 });
 
 /*
-// Call collaboration API when POST is added)
-MatchingService.setCollaborationCreator(async ({ userA, userB, questionId }) => {
-  const res = await fetch(`${process.env.COLLAB_BASE_URL ?? ""}/api/v1/collaboration`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userA, userB, questionId }),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error('Collab create failed: ${res.status} ${msg}');
-  }
-  const { session_id } = await res.json();
-  return { session_id };
-});
+ // Call collaboration API when POST is added
+ MatchingService.setCollaborationCreator(async ({ userA, userB, questionId }) => {
+   const res = await fetch(`${process.env.COLLAB_BASE_URL ?? ""}/api/v1/collaboration`, {
+     method: "POST",
+     headers: { "Content-Type": "application/json" },
+     body: JSON.stringify({ userA, userB, questionId }),
+     cache: "no-store",
+   });
+   if (!res.ok) {
+     const msg = await res.text().catch(() => "");
+     throw new Error(`Collab create failed: ${res.status} ${msg}`);
+   }
+   const { session_id } = await res.json();
+   return { session_id };
+ });
 */
 
-/**
- * -------------------------------------
+/** --------------------------------------------------------------
  * ROUTES
- * -------------------------------------
+ * --------------------------------------------------------------
  * POST: enqueue -> immediate match attempt
- * PATCH: hearbeat | try-match | relax | cancel
+ * PATCH: heartbeat | try-match | relax | cancel
  * GET: health/debug helpers
  * OPTIONS: CORS preflight
  */
@@ -211,10 +237,14 @@ export async function POST(req: NextRequest) {
     const adapted = normalizeEnqueue(raw);
     const input = EnqueueSchema.parse(adapted);
 
-    // Create ticket, then try to match immediately
+    // Create ticket (dedupe-aware)
     const { ticket, existing } = await MatchingService.enqueueWithExisting(input);
 
-    const body = { status: "queued", ticket_id: ticket.ticketId, ...(existing ? { existing: true} : {}) };
+    const body = {
+      status: "queued" as const,
+      ticket_id: ticket.ticketId,
+      ...(existing ? { existing: true as const } : {}),
+    };
 
     return withCors(
       new NextResponse(JSON.stringify(body), {
@@ -226,39 +256,8 @@ export async function POST(req: NextRequest) {
         },
       })
     );
-    // const result = await MatchingService.tryMatch(ticket.ticketId);
-
-    /** 
-    if (result) {
-      const sessionId = getSessionIdFromResult(result);
-      if (!sessionId) {
-        // Fallback: return raw match result if no known session key found
-        return withCors(
-          NextResponse.json(
-            { status: "matched", result },
-            { status: 200, headers: JSON_HEADERS }
-          )
-        );
-      }
-      return withCors(
-        NextResponse.json(
-          { status: "matched", session_id: sessionId, result },
-          { status: 200, headers: JSON_HEADERS }
-        )
-      );
-    }
-
-    // Still queued - let the client poll or call PATCH try-match
-    return withCors(
-      NextResponse.json(
-        { status: "queued", ticket_id: ticket.ticketId },
-        { status: 201, headers: JSON_HEADERS }
-      )
-    );
-    **/
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to enqueue ticket";
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to enqueue ticket";
     return badRequest(message);
   }
 }
@@ -313,7 +312,7 @@ export async function PATCH(req: NextRequest) {
       default:
         return badRequest("Unsupported action. Use heartbeat | try-match | relax | cancel.");
     }
-  } catch (err) {
+  } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to process request";
     return serverError(message);
   }
@@ -321,7 +320,6 @@ export async function PATCH(req: NextRequest) {
 
 // OPTIONS: handle preflight for browsers and tools
 export async function OPTIONS() {
-  // Preflight
   return withCors(
     new NextResponse(null, {
       status: 204,
@@ -347,26 +345,25 @@ export async function GET(req: NextRequest) {
 
     if (dump === "1") {
       // DEV ONLY: expose tickets and pairs
-      // @ts-ignore: internal dev helper
       const tickets = Array.from(MatchingRepo.__getTickets?.().values?.() ?? []);
-      // @ts-ignore
       const pairs = Array.from(MatchingRepo.__getPairs?.().values?.() ?? []);
       return withCors(
         NextResponse.json({ ok: true, tickets, pairs }, { status: 200 })
       );
     }
-    
+
     return withCors(
       NextResponse.json(
         { ok: true, message: "Matching API is up and responding. Use POST/PATCH for actions." },
         { status: 200 }
       )
     );
-  } catch (e: any) {
-    console.error("[GET debug] error:", e);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[GET debug] error:", msg);
     return withCors(
       NextResponse.json(
-        { ok: false, error: String(e?.message ?? e) },
+        { ok: false, error: msg },
         { status: 500 }
       )
     );

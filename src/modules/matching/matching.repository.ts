@@ -6,10 +6,8 @@
 import type {
     Difficulty,
     SkillLevel,
-    TicketStatus,
     TicketDbRow,
     PairDbRow,
-    Ticket,
 } from "./matching.types";
 
 // --------------------------
@@ -220,8 +218,8 @@ export const MatchingRepo = {
             const p = pairs.get(pairId);
             if (!p) return null;
             p.collaboration_id = sessionId;
-            // expose bth keys if different layers read different names
-            (p as any).session_id = sessionId;
+            // expose both keys if different layers read different names
+            p.session_id= sessionId;
             pairs.set(pairId, p);
             return p;
         },

@@ -28,10 +28,9 @@ import type {
   PairDbRow,
 } from "./matching.types";
 import { mapTicket, mapMatchResult } from "./matching.types";
-// import { questionService } from "../question/question.service";
+import { questionService } from "../question/question.service";
 import { Question } from "../question/question.types";
-import { EnqueueSchema } from "./matching.schema";
-import { boolean } from "zod";
+import { normalizeDifficulty, type Difficulty } from "./matching.utils";
 
 /** Centralized knobs (document these in your design doc) */
 const CONFIG = {
@@ -62,6 +61,7 @@ type CreateSessionFn = (args: {
 
 let createCollabSession: CreateSessionFn | null = null;
 
+
 /**
  * Allow API layer to inject a collaboration creator at runtime.
  * Example usage in route.ts:
@@ -82,66 +82,101 @@ async function safeGetAllQuestions(): Promise<Question[]> {
   try {
     // Lazy import so cloud SQL code in question.service doesn't run at module load
     const mod = await import("../question/question.service");
-    const qs = (mod as any).questionService;
 
-    if (qs?.getAllQuestions) {
+    // Narrowed dynamic import: check the property exists and is an object
+    const qs = (mod as { questionService?: typeof questionService }).questionService;
+
+    if (qs && typeof qs.getAllQuestions === "function") {
       const result = await qs.getAllQuestions();
       return Array.isArray(result) ? result : [];
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const message =
+      e instanceof Error ? e.message : String(e ?? "unknown error");
     console.warn(
       "[MatchingService] question service unavailable - continuing without question data:",
-      e?.message ?? e
+      message
     );
   }
+
   return [];
 }
 
+
 /** Utility: after the repo returns a Pair, optionally create a collab session and attach it. */
+type CreateSessionResult = { session_id?: string; sessionId?: string };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function pickString(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string") return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  }
+  return null;
+}
+
 async function enrichWithSessionIfConfigured(pair: PairDbRow): Promise<PairDbRow> {
   if (!createCollabSession) return pair;
 
+  // Treat `pair` as a loose record for reading legacy keys safely.
+  const rec = isRecord(pair) ? pair : ({} as Record<string, unknown>);
+
   try {
-    // Prefer user IDs; fall back to ticket IDs if your PairDbRow doesn't expose user_id_*.
-    const userA = (pair as any).user_id_a ?? (pair as any).ticket_id_a;
-    const userB = (pair as any).user_id_b ?? (pair as any).ticket_id_b;
-    const questionId = (pair as any)?.question_id ?? null;
+    // Prefer user IDs; fall back to ticket IDs if present.
+    const userA = pickString(rec, ["user_id_a", "ticket_id_a"]) ?? "";
+    const userB = pickString(rec, ["user_id_b", "ticket_id_b"]) ?? "";
+    const questionId = (() => {
+      const v = rec["question_id"];
+      return typeof v === "string" || typeof v === "number" ? v : null;
+    })();
 
-    const session = await createCollabSession({ userA, userB, questionId });
+    const session: CreateSessionResult = await createCollabSession({ userA, userB, questionId });
+    const sessionId = session.session_id ?? session.sessionId ?? null;
 
-    // Attach session on the pair if the repo exposes such a helper.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repoAny: any = MatchingRepo as any;
-    if (typeof repoAny.attachSession === "function") {
-      await repoAny.attachSession(
-        (pair as any).pair_id,
-        session.session_id
-      );
+    // If creation failed to return an id, just return the original pair.
+    if (!sessionId) return pair;
+
+    // If the repository exposes helpers, call them (typed optionally).
+    const repo = MatchingRepo as unknown as {
+      attachSession?: (pairId: string, sessionId: string) => Promise<unknown>;
+      rollbackMatch?: (pairId: string) => Promise<unknown>;
+    };
+
+    const pairId = pickString(rec, ["pair_id"]);
+    if (repo.attachSession && pairId) {
+      await repo.attachSession(pairId, sessionId);
     }
 
-    // Enrich the returned PairDbRow with both fields for flexibility:
-    // - collaboration_id (what your mapper might read)
-    // - session_id (what route helper might read)
-    return {
-      ...pair,
-      collaboration_id: (session as any).session_id,
-      session_id: (session as any).session_id,
-    } as PairDbRow;
-  } catch (err) {
+    // Enrich the returned object with both keys for downstream readers.
+    // We return a value assignable to PairDbRow; extra keys are harmless.
+    const enriched = {
+      ...(pair as unknown as Record<string, unknown>),
+      collaboration_id: sessionId,
+      session_id: sessionId, // legacy alias
+    };
+
+    return enriched as PairDbRow;
+  } catch (err: unknown) {
     console.error("[MatchingService] collaboration session creation failed:", err);
 
-    // If repo supports compensating action, attempt rollback.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repoAny: any = MatchingRepo as any;
-    if (typeof repoAny.rollbackMatch === "function") {
+    // Best-effort compensation if available
+    const repo = MatchingRepo as unknown as {
+      rollbackMatch?: (pairId: string) => Promise<unknown>;
+    };
+
+    const pairId = isRecord(pair) ? pickString(pair, ["pair_id"]) : null;
+    if (repo.rollbackMatch && pairId) {
       try {
-        await repoAny.rollbackMatch((pair as any).pair_id);
+        await repo.rollbackMatch(pairId);
       } catch (rollbackErr) {
         console.error("[MatchingService] rollbackMatch failed:", rollbackErr);
       }
     }
 
-    // Propagate so the API can decide to surface 500 / retry / etc.
+    // Propagate so API can decide how to surface it
     throw err;
   }
 }
@@ -262,70 +297,88 @@ export const MatchingService = {
    *  - Error -> if repository or logic fails (bubbled up to route.ts for 500)
    */
   async tryMatch(ticketId: string): Promise<MatchResult | null> {
-    try {
-      // Opportunistic housekeeping
-      await MatchingRepo.cleanup(CONFIG.staleHeartbeatSeconds).catch(() => void 0);
+  try {
+    await MatchingRepo.cleanup(CONFIG.staleHeartbeatSeconds).catch(() => void 0);
 
-      const anchor = await MatchingRepo.loadAnchorForUpdate(ticketId);
-      if (!anchor || anchor.status !== "QUEUED") return null;
+    const anchor = await MatchingRepo.loadAnchorForUpdate(ticketId);
+    if (!anchor || anchor.status !== "QUEUED") return null;
 
-      // ---- STRICT MATCH PASS ------------------------------------------------
-      {
-        const partner = await MatchingRepo.findPartnerStrict(anchor);
-        if (partner) {
-          // Guard: never match a user to themselves
-          if (
-            (partner as any).user_id === (anchor as any).user_id
-          ) {
-            console.warn("[MatchingService] strict partner is same user, skipping");
-          } else {
-            const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
-            if (!pair) return null;
-            
-            const allQs: Question[] = await safeGetAllQuestions();
-            const qid = pickQuestionForPair(allQs, anchor.difficulty as any, anchor.topics ?? []);
+    const getUserId = (r: unknown): string | null => {
+      if (!isRecord(r)) return null;
+      return pickString(r, ["user_id", "userId", "user"]);
+    };
 
-            const maybeSessioned = await enrichWithSessionIfConfigured({
-              ...pair,
-              ...(qid != null ? { question_id: qid } : {}),
-            } as PairDbRow);
+    const anchorUserId = getUserId(anchor);
 
-              return mapMatchResult(maybeSessioned);
-            }
-          }
-        }
+    // ⬇️ normalize difficulty into canonical "EASY" | "MEDIUM" | "HARD"
+    const rawDifficulty = isRecord(anchor) ? pickString(anchor, ["difficulty"]) : null;
+    const difficulty: Difficulty | null = normalizeDifficulty(rawDifficulty);
 
-      // ---- FLEXIBLE MATCH PASS ----------------------------------------------
-      {
-        const partner = await MatchingRepo.findPartnerFlexible(anchor);
-        if (partner) {
-          if (
-            (partner as any).user_id === (anchor as any).user_id
-          ) {
-            console.warn("[MatchingService] flexible partner is same user, skipping");
-          } else {
-            const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
-            if (!pair) return null;
-            
-            const allQs: Question[] = await safeGetAllQuestions();
-            const qid = pickQuestionForPair(allQs, anchor.difficulty as any, anchor.topics ?? []);
+    const topics: string[] =
+      isRecord(anchor) && Array.isArray(anchor.topics) ? (anchor.topics as string[]) : [];
 
-            const maybeSessioned = await enrichWithSessionIfConfigured({
-              ...pair,
-              ...(qid != null ? { question_id: qid } : {}),
-            } as PairDbRow);
+    // ---- STRICT MATCH PASS ------------------------------------------------
+    {
+      const partner = await MatchingRepo.findPartnerStrict(anchor);
+      if (partner) {
+        const partnerUserId = getUserId(partner);
+        if (partnerUserId && partnerUserId === anchorUserId) {
+          console.warn("[MatchingService] strict partner is same user, skipping");
+        } else {
+          const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
+          if (!pair) return null;
 
-            return mapMatchResult(maybeSessioned);
-          }
+          const allQs: Question[] = await safeGetAllQuestions();
+
+          // If pickQuestionForPair REQUIRES Difficulty (non-null), default it:
+          const qid = pickQuestionForPair(allQs, (difficulty ?? "EASY") as Difficulty, topics);
+
+          // If your pickQuestionForPair ALLOWS null, use this instead:
+          // const qid = pickQuestionForPair(allQs, difficulty, topics);
+
+          const maybeSessioned = await enrichWithSessionIfConfigured({
+            ...pair,
+            ...(qid != null ? { question_id: qid } : {}),
+          });
+
+          return mapMatchResult(maybeSessioned);
         }
       }
-
-      return null;
-    } catch (e) {
-      console.error("[MatchingService.tryMatch] failed for ticket:", ticketId, e);
-      throw e; // keep bubbling so the route returns 500 for now
     }
-  },
+
+    // ---- FLEXIBLE MATCH PASS ----------------------------------------------
+    {
+      const partner = await MatchingRepo.findPartnerFlexible(anchor);
+      if (partner) {
+        const partnerUserId = getUserId(partner);
+        if (partnerUserId && partnerUserId === anchorUserId) {
+          console.warn("[MatchingService] flexible partner is same user, skipping");
+        } else {
+          const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
+          if (!pair) return null;
+
+          const allQs: Question[] = await safeGetAllQuestions();
+
+          // Same note as above re: default vs null
+          const qid = pickQuestionForPair(allQs, (difficulty ?? "EASY") as Difficulty, topics);
+          // or: const qid = pickQuestionForPair(allQs, difficulty, topics);
+
+          const maybeSessioned = await enrichWithSessionIfConfigured({
+            ...pair,
+            ...(qid != null ? { question_id: qid } : {}),
+          });
+
+          return mapMatchResult(maybeSessioned);
+        }
+      }
+    }
+
+    return null;
+  } catch (e: unknown) {
+    console.error("[MatchingService.tryMatch] failed for ticket:", ticketId, e);
+    throw e;
+  }
+},
 
   /**
    * ------------------------------------------
@@ -342,73 +395,76 @@ export const MatchingService = {
    *  - MatchResult -> if matched after relaxation
    *  - null        -> if still unmatched
    */
-  async relax(req: RelaxRequest): Promise<MatchResult | null> {
-    try {
-      const extendSeconds = req.extendSeconds ?? CONFIG.defaultTicketTimeoutSeconds;
+  // (place these tiny helpers near the top of the file once, if not already present)
+async relax(req: RelaxRequest): Promise<MatchResult | null> {
+  try {
+    const extendSeconds = req.extendSeconds ?? CONFIG.defaultTicketTimeoutSeconds;
 
-      // Extend timeout; keep status QUEUED if applicable
-      const row = await MatchingRepo.relaxExtend(req.ticketId, extendSeconds, {
-        relaxTopics: !!req.relaxTopics,
-        relaxDifficulty: !!req.relaxDifficulty,
-        relaxSkill: !!req.relaxSkill,
-        });
+    // Extend timeout; keep status QUEUED if applicable
+    const row = await MatchingRepo.relaxExtend(req.ticketId, extendSeconds, {
+      relaxTopics: !!req.relaxTopics,
+      relaxDifficulty: !!req.relaxDifficulty,
+      relaxSkill: !!req.relaxSkill,
+    });
 
-      if (!row || row.status !== "QUEUED") return null;
+    if (!row || row.status !== "QUEUED") return null;
 
-      // If caller chose to relax TOPICS, bias immediately toward flexible search.
-      // Otherwise retry strict first (possibly catching newly arrived strict partners).
-      const preferFlexibleFirst = !!req.relaxTopics;
+    // prefer flexible search if topics relaxed; else retry strict first
+    const preferFlexibleFirst = !!req.relaxTopics;
 
-      // Helper to attempt a match and (optionally) create a session
-      const attempt = async (mode: "strict" | "flex") => {
-        if (mode === "strict") {
-          const partner = await MatchingRepo.findPartnerStrict(row);
-          if (partner) {
-            // Guard
-            if ((partner as any).user_id === (row as any).user_id) return null;
-            const pair = await MatchingRepo.markMatched(row.ticket_id, partner.ticket_id);
-            if (!pair) return null;
-            const allQs: Question[] = await safeGetAllQuestions();
-            const qid = pickQuestionForPair(allQs, row.difficulty as any, row.topics ?? []);
+    // Precompute normalized attributes off `row`
+    const rec = isRecord(row) ? row : ({} as Record<string, unknown>);
+    const rowUserId = pickString(rec, ["user_id", "userId", "user"]);
+    const rawDifficulty = pickString(rec, ["difficulty"]);
+    const difficulty: Difficulty | null = normalizeDifficulty(rawDifficulty);
+    const topics: string[] = Array.isArray((row as unknown as { topics?: unknown }).topics)
+      ? ((row as unknown as { topics: string[] }).topics)
+      : [];
 
-            const maybeSessioned = await enrichWithSessionIfConfigured({
-              ...pair,
-              ...(qid != null ? { question_id: qid } : {}),
-            } as PairDbRow);
-            return mapMatchResult(maybeSessioned);
-          }
-        } else {
-          const partner = await MatchingRepo.findPartnerFlexible(row);
-          if (partner) {
-            // Guard
-            if ((partner as any).user_id === (row as any).user_id) return null;
-            const pair = await MatchingRepo.markMatched(row.ticket_id, partner.ticket_id);
-            if (!pair) return null;
+    const getUserId = (r: unknown): string | null =>
+      isRecord(r) ? pickString(r, ["user_id", "userId", "user"]) : null;
 
-            const allQs: Question[] = await safeGetAllQuestions();
-            const qid = pickQuestionForPair(allQs, row.difficulty as any, row.topics ?? []);
+    // attempt helper (strict | flex)
+    const attempt = async (mode: "strict" | "flex") => {
+      const partner =
+        mode === "strict"
+          ? await MatchingRepo.findPartnerStrict(row)
+          : await MatchingRepo.findPartnerFlexible(row);
 
-            const maybeSessioned = await enrichWithSessionIfConfigured({
-              ...pair,
-              ...(qid != null ? { question_id: qid } : {}),
-            } as PairDbRow);
+      if (!partner) return null;
 
-            return mapMatchResult(maybeSessioned);
-          }
-        }
+      const partnerUserId = getUserId(partner);
+      if (partnerUserId && rowUserId && partnerUserId === rowUserId) {
+        // Guard: never match a user to themselves
         return null;
-      };
-
-      if (preferFlexibleFirst) {
-        return (await attempt("flex")) ?? (await attempt("strict"));
-      } else {
-        return (await attempt("strict")) ?? (await attempt("flex"));
       }
-    } catch (e) {
-      console.error("[MatchingService.relax] failed for ticket:", req.ticketId, e);
-      throw e;
-    }
-  },
+
+      const pair = await MatchingRepo.markMatched(row.ticket_id, partner.ticket_id);
+      if (!pair) return null;
+
+      const allQs: Question[] = await safeGetAllQuestions();
+
+      // If your picker requires non-null Difficulty, default it here:
+      const effDifficulty: Difficulty = (difficulty ?? "EASY") as Difficulty;
+      const qid = pickQuestionForPair(allQs, effDifficulty, topics);
+      // If your picker accepts null, use: const qid = pickQuestionForPair(allQs, difficulty, topics);
+
+      const maybeSessioned = await enrichWithSessionIfConfigured({
+        ...pair,
+        ...(qid != null ? { question_id: qid } : {}),
+      });
+
+      return mapMatchResult(maybeSessioned);
+    };
+
+    return preferFlexibleFirst
+      ? (await attempt("flex")) ?? (await attempt("strict"))
+      : (await attempt("strict")) ?? (await attempt("flex"));
+  } catch (e: unknown) {
+    console.error("[MatchingService.relax] failed for ticket:", req.ticketId, e);
+    throw e;
+  }
+},
 
   async getTicket(ticketId: string): Promise<Ticket | null> {
     const row = await MatchingRepo.getTicket(ticketId);

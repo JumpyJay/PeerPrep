@@ -317,9 +317,19 @@ export default function FindMatchButton({
                         Retry
                     </Button>
 
-                    <Button
-                       onClick={async () => {
-                        try {
+                   <Button
+                        onClick={async () => {
+                            // define the shapes we expect back from the API
+                            type MatchQueued = { status: "queued"; ticket_id: string };
+                            type MatchFound  = { status: "matched"; session_id: string; result?: unknown };
+                            type MatchPending= { status: "matched_pending_session"; result?: unknown };
+                            type MatchOther  =
+                            | { status: "searching" | "timeout" | "cancelled" | "expired" | "not_found" }
+                            | { error: string };
+
+                            type ApiResp = MatchQueued | MatchFound | MatchPending | MatchOther;
+
+                            try {
                             setErr(null);
                             setStatus("searching");
                             setLabel("Relaxing criteria...");
@@ -328,42 +338,64 @@ export default function FindMatchButton({
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
-                                    userId: normEmail(currentUserEmail),
-                                    question_id: questionId,
-                                    skillLevel: skillLevel,
-                                    difficulty,
-                                    topics: topics ?? [],
-                                    strictMode: false,
+                                userId: normEmail(currentUserEmail),
+                                question_id: questionId,     // legacy key is fine; server normalizes
+                                skillLevel,
+                                difficulty,
+                                topics: topics ?? [],
+                                strictMode: false,
                                 }),
                             });
 
-                            if (!res.ok) throw new Error("Network error");
-                            const data = await res.json();
+                            if (!res.ok) throw new Error(`Network error (${res.status})`);
+                            const data: ApiResp = await res.json();
 
-                            if (data.status === "matched" && data.session_id) {
+                            if ("error" in data) {
+                                throw new Error(data.error);
+                            }
+
+                            if (data.status === "matched" && "session_id" in data && typeof data.session_id === "string") {
                                 redirectToSession(data.session_id);
                                 return;
                             }
 
-                            if (data.status === "queued" && data.ticket_id) {
+                            if (data.status === "queued" && "ticket_id" in data && typeof data.ticket_id === "string") {
                                 setTicketId(data.ticket_id);
                                 startPolling(data.ticket_id);
                                 return;
                             }
 
+                            // handle other known statuses, or fall through to generic error
+                            if (
+                                data.status === "matched_pending_session" ||
+                                data.status === "searching" ||
+                                data.status === "timeout" ||
+                                data.status === "cancelled" ||
+                                data.status === "expired" ||
+                                data.status === "not_found"
+                            ) {
+                                // optional: set a user-friendly label per status
+                                setStatus("searching");
+                                setLabel("Still looking for a match...");
+                                return;
+                            }
+
+                            // unexpected shape
                             setStatus("error");
                             setLabel("Find Match");
                             setErr("Unexpected response from server. Please try again.");
-                        } catch (e: any) {
+                            } catch (e: unknown) {
+                            const msg = e instanceof Error ? e.message : "Failed to relax and retry.";
                             setStatus("error");
                             setLabel("Find Match");
-                            setErr(e?.message ?? "Failed to relax and retry.");
-                        }
-                       }}
-                       disabled={isBusy}
-                       >
+                            setErr(msg);
+                            }
+                        }}
+                        disabled={isBusy}
+                        >
                         Relax & Retry
-                       </Button>
+                        </Button>
+
                     </div>
             )}
 

@@ -157,14 +157,34 @@ export function mapTicket(row: TicketDbRow): Ticket {
     };
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function pickString(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string") return v;
+  }
+  return null;
+}
+
 export function mapMatchResult(row: PairDbRow): MatchResult {
-    return {
-        pairId: row.pair_id,
-        ticketIdA: row.ticket_id_a,
-        ticketIdB: row.ticket_id_b,
-        strictMode: row.strict_mode,
-        questionId: row.question_id ?? null,
-        sessionId: (row as any).session_id ?? (row as any).collaboration_id ?? null,
-        collaborationId: row.collaboration_id ?? null,
-    };
+  const rec = isRecord(row) ? row : ({} as Record<string, unknown>);
+
+  const sessionId =
+    pickString(rec, ["session_id", "collaboration_id"]) ??
+    (typeof row.collaboration_id === "string" ? row.collaboration_id : null);
+
+  return {
+    pairId: row.pair_id,
+    ticketIdA: row.ticket_id_a,
+    ticketIdB: row.ticket_id_b,
+    strictMode: row.strict_mode,
+    questionId:
+      typeof row.question_id === "string" || typeof row.question_id === "number"
+        ? row.question_id
+        : null,
+    sessionId,
+    collaborationId: row.collaboration_id ?? null,
+  };
 }
