@@ -6,6 +6,9 @@ import { MatchingRepo } from "@/modules/matching/matching.repository";
 export const runtime = "nodejs";
 const JSON_HEADERS = { "content-type": "application/json" as const };
 
+type Params = { ticketId: string };
+type Ctx = { params: Promise<Params> }; // <-- note Promise here
+
 // -------------------------
 // Helpers
 // -------------------------
@@ -60,10 +63,10 @@ export async function OPTIONS() {
  */
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { ticketId: string } }
+  context: Ctx
 ) {
   try {
-    const { ticketId } = params;
+    const { ticketId } = await context.params;
 
     // Opportunistic housekeeping + matching attempt
     await MatchingService.housekeep().catch(() => {});
@@ -163,16 +166,18 @@ export async function GET(
 // DELETE
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { ticketId: string } }
+  context: Ctx 
 ) {
+    const { ticketId } = await context.params;
+
   try {
-    const ok = await MatchingService.cancel(params.ticketId);
+    const ok = await MatchingService.cancel(ticketId);
 
     if (!ok) {
       // Ticket wasn't cancellable (already matched, cancelled, or not found)
       return withCors(
         NextResponse.json(
-          { status: "not_cancellable", ticket_id: params.ticketId },
+          { status: "not_cancellable", ticket_id: ticketId },
           { status: 409, headers: JSON_HEADERS }
         )
       );
@@ -180,7 +185,7 @@ export async function DELETE(
 
     return withCors(
       NextResponse.json(
-        { status: "cancelled", ticket_id: params.ticketId },
+        { status: "cancelled", ticket_id: ticketId },
         { headers: JSON_HEADERS }
       )
     );
