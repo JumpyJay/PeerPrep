@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X } from "lucide-react";
 import type { Question } from "@/modules/question/question.types";
+import FindMatchButton from "@/app/matching/components/FindMatchButton";
 
 interface QuestionModalProps {
   question: Question;
@@ -85,7 +86,13 @@ export default function QuestionModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-border bg-card p-6">
+        <div className="border-t border-border bg-card p-6 flex gap-3">
+          <FindMatchButton
+            questionId={question.question_id}
+            difficulty={question.difficulty}
+            skillLevel="Beginner"
+            topics={question.tags}
+          />
           <Button onClick={onClose} className="w-full">
             Close
           </Button>
