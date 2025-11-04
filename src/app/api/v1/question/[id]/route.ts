@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { questionService } from "@/modules/question/question.service";
+import { assertServiceAuthorized } from "@/lib/security/service-auth";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  try {
+    assertServiceAuthorized(req, "read");
+  } catch (error) {
+    if (error instanceof Error && "status" in error) {
+      return NextResponse.json({ error: error.message }, { status: Number(error.status) });
+    }
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const params = await context.params;
   const id = Number(params.id);
   if (Number.isNaN(id)) {
@@ -22,4 +31,3 @@ export async function GET(
     return NextResponse.json({ error: "Failed to fetch question." }, { status: 500 });
   }
 }
-
