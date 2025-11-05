@@ -220,24 +220,53 @@ MatchingService.setCollaborationCreator(async () => {
 // Returns either:
 // - { status: "matched", session_id, result }
 // - { status: "queued", ticket_id }
+// src/app/api/v1/matching/route.ts
 export async function POST(req: NextRequest) {
   try {
-    // Opportunistic cleanup to keep queue healthy
     await MatchingService.housekeep();
 
-    // Guard malformed JSON before parsing with Zod
+    // 1) Read raw body once and log it
+    const rawText = await req.text();
+    console.log("[matching] raw body text:", rawText);
+
+    // 2) Parse JSON safely
     let raw: unknown;
     try {
-      raw = await req.json();
-    } catch {
-      return badRequest("Invalid JSON body");
+      raw = JSON.parse(rawText);
+    } catch (e) {
+      console.error("JSON parse error:", e);
+      return withCors(
+        NextResponse.json(
+          { error: "Invalid JSON body" },
+          { status: 400, headers: { "content-type": "application/json" } }
+        )
+      );
     }
 
-    // Legacy -> canonical -> Zod validation
+    // 3) Normalize legacy → canonical
     const adapted = normalizeEnqueue(raw);
-    const input = EnqueueSchema.parse(adapted);
+    console.log("[matching] normalized payload:", adapted);
 
-    // Create ticket (dedupe-aware)
+    // 4) Use safeParse to *return* the issues instead of throwing
+    const parsed = EnqueueSchema.safeParse(adapted);
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map(i => ({
+        path: i.path.join("."),
+        message: i.message,
+        code: i.code,
+      }));
+      console.error("Zod validation failed:", issues);
+      return withCors(
+        NextResponse.json(
+          { error: "Validation failed", issues },
+          { status: 400, headers: { "content-type": "application/json" } }
+        )
+      );
+    }
+
+    const input = parsed.data;
+
+    // 5) Proceed as before
     const { ticket, existing } = await MatchingService.enqueueWithExisting(input);
 
     const body = {
@@ -251,16 +280,23 @@ export async function POST(req: NextRequest) {
         status: existing ? 200 : 201,
         headers: {
           ...JSON_HEADERS,
-          // tell client where to poll
           Location: `/api/v1/matching/tickets/${ticket.ticketId}`,
         },
       })
     );
   } catch (err: unknown) {
+    console.error("POST /matching failed:", err);
     const message = err instanceof Error ? err.message : "Failed to enqueue ticket";
-    return badRequest(message);
+    return withCors(
+      NextResponse.json(
+        { error: message },
+        { status: 400, headers: { "content-type": "application/json" } }
+      )
+    );
   }
 }
+
+
 
 // PATCH /api/v1/matching?action=heartbeat|try-match|relax|cancel
 export async function PATCH(req: NextRequest) {

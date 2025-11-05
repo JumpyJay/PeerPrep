@@ -409,16 +409,25 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
 
     if (!row || row.status !== "QUEUED") return null;
 
+    // Inject the requested relax flags into the working row (not persisted).
+    const workingRow = {
+      ...row,
+      ...(req.relaxTopics ? { relax_topics: true as const } : {}),
+      ...(req.relaxDifficulty ? { relax_difficulty: true as const } : {}),
+      ...(req.relaxSkill ? { relax_skill: true as const } : {}),
+    } as TicketDbRow;
+
+
     // prefer flexible search if topics relaxed; else retry strict first
     const preferFlexibleFirst = !!req.relaxTopics;
 
     // Precompute normalized attributes off `row`
-    const rec = isRecord(row) ? row : ({} as Record<string, unknown>);
+    const rec = isRecord(workingRow) ? workingRow : ({} as Record<string, unknown>);
     const rowUserId = pickString(rec, ["user_id", "userId", "user"]);
     const rawDifficulty = pickString(rec, ["difficulty"]);
     const difficulty: Difficulty | null = normalizeDifficulty(rawDifficulty);
-    const topics: string[] = Array.isArray((row as unknown as { topics?: unknown }).topics)
-      ? ((row as unknown as { topics: string[] }).topics)
+    const topics: string[] = Array.isArray((workingRow as unknown as { topics?: unknown }).topics)
+      ? ((workingRow as unknown as { topics: string[] }).topics)
       : [];
 
     const getUserId = (r: unknown): string | null =>
@@ -428,8 +437,8 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
     const attempt = async (mode: "strict" | "flex") => {
       const partner =
         mode === "strict"
-          ? await MatchingRepo.findPartnerStrict(row)
-          : await MatchingRepo.findPartnerFlexible(row);
+          ? await MatchingRepo.findPartnerStrict(workingRow)
+          : await MatchingRepo.findPartnerFlexible(workingRow);
 
       if (!partner) return null;
 

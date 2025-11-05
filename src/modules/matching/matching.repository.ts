@@ -3,13 +3,33 @@
 // When you add CloudSQL/Prisma, keep the same function signature & return shapes
 // so the service layer remains unchanged.
 
+import { getConnectionPool } from "@/lib/db";
 import type {
     Difficulty,
     SkillLevel,
     TicketDbRow,
     PairDbRow,
+    TicketStatus,
 } from "./matching.types";
 
+// Helpers
+const toTimestamp = (d: Date) => d.getTime();
+
+type TicketSqlRow = {
+    ticket_id: string;
+    user_id: string;
+    difficulty: string;
+    topics: string[] | null;
+    skill_level: string;
+    strict_mode: boolean;
+    status: string;
+    enqueued_at: string;
+    last_seen_at: string;
+    timeout_at: string | null;
+    pair_id: string | null;
+};
+
+/**
 // --------------------------
 // In-memory state(DEV only)
 // --------------------------
@@ -20,11 +40,12 @@ const pairs = new Map<string, PairDbRow>();
 const uuid = () => 
     (globalThis.crypto?.randomUUID?.() ?? 
     `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+*/
 
 // Normalize topics (lowercase) for consistent overlap checks
-function normTopics(xs: string[] | undefined | null): string[] {
-    return Array.isArray(xs) ? xs.map(s => s.trim().toLowerCase()).filter(Boolean) : [];
-}
+const normTopics = (xs: string[] | undefined | null): string[] =>
+    Array.isArray(xs) ? xs.map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+
 
 function strictOverlapThresholdFor(nAnchorTopics: number): number {
     if (nAnchorTopics <= 0) return 0; // no topic constraint
@@ -32,6 +53,7 @@ function strictOverlapThresholdFor(nAnchorTopics: number): number {
     if (nAnchorTopics <= 3) return 2/3; // ~0.67 for 2-3 topics
     return 0.6; // 4+ topics
 }
+
 
 // Simple overlap (Jaccard) used in flexible scoring
 function topicOverlap(a: string[], b: string[]): number {
@@ -63,7 +85,7 @@ function topicDistance(a: string[], b: string[]): number {
 // -------------------------------------------
 // NOTE: All methods are async to match DB usage later.
 
-/** Create a new QUEUED ticket */
+/** Create a new QUEUED ticket (idempotent at service layer; DB enforces uniqueness per user) */
 export const MatchingRepo = {
     async createTicket(p: {
         userId: string;
@@ -73,44 +95,157 @@ export const MatchingRepo = {
         strictMode: boolean;
         timeoutSeconds: number;
     }): Promise<TicketDbRow> {
-        const now = Date.now();
-        const t: TicketDbRow = {
-            ticket_id: uuid(),
-            user_id: p.userId,
-            difficulty: p.difficulty as Difficulty,
-            topics: p.topics.map(t => t.trim().toLowerCase()),
-            skill_level: p.skillLevel as SkillLevel,
-            strict_mode: p.strictMode,
-            status: "QUEUED",
-            enqueued_at: now,
-            last_seen_at: now,
-            timeout_at: now + p.timeoutSeconds * 1000,
-        };
-        tickets.set(t.ticket_id, t);
-        return t;
+        const pool = await getConnectionPool();
+        const topics = normTopics(p.topics);
+
+        try {
+            const text = `
+            insert into tickets (user_id, difficulty, topics, skill_level, strict_mode, status, timeout_at)
+            values ($1, $2, $3::text[], $4, $5, 'QUEUED', now() + make_interval(secs => $6))
+            returning *
+            `;
+            const values = [p.userId, String(p.difficulty), topics, String(p.skillLevel), !!p.strictMode, p.timeoutSeconds];
+
+            const { rows } = await pool.query(text, values);
+            const r = rows[0];
+
+            // Map DB row -> TicketDbRow (preserve your field names/types)
+            return {
+                ticket_id: r.ticket_id,
+                user_id: r.user_id,
+                difficulty: r.difficulty,
+                topics: r.topics ?? [],
+                skill_level: r.skill_level,
+                strict_mode: r.strict_mode,
+                status: r.status,
+                enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+                last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+                timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+                pair_id: r.pair_id ?? null,
+            };
+        } catch (e: any) {
+            // 23505 = unique_violation (our partial index ux_ticket_user_open)
+            if (e?.code === "23505") {
+                // Return the existing open ticket instead of crashing
+                const { rows } = await pool.query(
+                    `select *
+                        from tickets where user_id = $1 and status = 'QUEUED'
+                        order by enqueued_at asc
+                        limit 1`,
+                    [p.userId]
+                );
+
+                if (rows[0]) {
+                    const r = rows[0];
+                    return {
+                        ticket_id: r.ticket_id,
+                        user_id: r.user_id,
+                        difficulty: r.difficulty,
+                        topics: r.topics ?? [],
+                        skill_level: r.skill_level,
+                        strict_mode: r.strict_mode,
+                        status: r.status,
+                        enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+                        last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+                        timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+                        pair_id: r.pair_id ?? null,
+                    };
+                }
+            }
+
+            // return if it's not a unique-violation
+            throw e;
+        }
     },
 
     /** Update last_seen_at while QUEUED (keeps the ticket "alive") */
     async heartbeat(ticketId: string): Promise<TicketDbRow | null> {
-        const t = tickets.get(ticketId);
-        if (!t || t.status !== "QUEUED") return null;
-        t.last_seen_at = Date.now()
-        tickets.set(t.ticket_id, t);
-        return t;
+        const pool = await getConnectionPool();
+        const { rows } = await pool.query(
+            `update tickets 
+                set last_seen_at = now()
+            where ticket_id = $1 and status = 'QUEUED'
+            returning *`,
+            [ticketId]
+        );
+        if (!rows[0]) return null;
+        const r = rows[0];
+        return {
+            ticket_id: r.ticket_id,
+            user_id: r.user_id,
+            difficulty: r.difficulty,
+            topics: r.topics ?? [],
+            skill_level: r.skill_level,
+            strict_mode: r.strict_mode,
+            status: r.status,
+            enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+            last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+            timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+            pair_id: r.pair_id ?? null,
+        };
     },
 
     /** Cancel a ticket if it hasn't matched yet (only from QUEUED) */
     async cancel(ticketId: string): Promise<TicketDbRow | null> {
-        const t = tickets.get(ticketId);
-        if (!t || t.status !== "QUEUED") return null;
-        t.status = "CANCELLED";
-        tickets.set(t.ticket_id, t);
-        return t;
+        const pool = await getConnectionPool();
+        const { rows } = await pool.query(
+            `update tickets set status = 'CANCELLED'
+              where ticket_id = $1 and status = 'QUEUED'
+            returning *`,
+            [ticketId]
+        );
+        if (!rows[0]) return null;
+        const r = rows[0];
+        return {
+            ticket_id: r.ticket_id,
+            user_id: r.user_id,
+            difficulty: r.difficulty,
+            topics: r.topics ?? [],
+            skill_level: r.skill_level,
+            strict_mode: r.strict_mode,
+            status: r.status,
+            enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+            last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+            timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+            pair_id: r.pair_id ?? null,
+        };
     },
+
+    
+    /** Relax a ticket's constraints if it hasn't matched yet (only from QUEUED) */
+    /** 
+    async relax(ticketId: string, relax: {
+        relaxDifficulty?: boolean;
+        relaxTopics?: boolean;
+        relaxSkill?: boolean;
+        extendSeconds?: number;
+    }): Promise<TicketDbRow | null> {
+        const pool = await getConnectionPool();
+        
+
+        )
+    },
+    */
 
     /** Load the anchor ticket that is initating a match attempt */
     async loadAnchorForUpdate(ticketId: string): Promise<TicketDbRow | null> {
-        return tickets.get(ticketId) ?? null;
+        const pool = await getConnectionPool();
+        const { rows } = await pool.query(`select * from tickets where ticket_id = $1`, [ticketId]);
+        if (!rows[0]) return null;
+        const r = rows[0];
+        return {
+            ticket_id: r.ticket_id,
+            user_id: r.user_id,
+            difficulty: r.difficulty,
+            topics: r.topics ?? [],
+            skill_level: r.skill_level,
+            strict_mode: r.strict_mode,
+            status: r.status,
+            enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+            last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+            timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+            pair_id: r.pair_id ?? null,
+        }
     },
 
     /**
@@ -125,35 +260,50 @@ export const MatchingRepo = {
      */
     async findPartnerStrict(anchor: TicketDbRow): Promise<TicketDbRow | null> {
         if (anchor.status !== "QUEUED") return null;
+        const pool = await getConnectionPool();
+        const { rows } = await pool.query<TicketSqlRow>(
+            `select * 
+                from tickets
+             where status = 'QUEUED'
+               and ticket_id <> $1
+               and user_id <> $2
+               and difficulty = $3
+               and skill_level = $4
+             order by enqueued_at asc
+             limit 100`, 
+             [anchor.ticket_id, anchor.user_id, anchor.difficulty, anchor.skill_level]
+        );
 
         const aTopics = normTopics(anchor.topics);
-        let best: TicketDbRow | null = null;
+        const base = strictOverlapThresholdFor(aTopics.length);
+        const need = anchor.strict_mode ? Math.min(1, base + 0.1) : base;
 
-        for (const cand of tickets.values()) {
-            if (cand.status !== "QUEUED") continue;
-            if (cand.ticket_id === anchor.ticket_id) continue; // not itself
-            if (cand.user_id === anchor.user_id) continue; // avoid same user's other ticket
-            if (cand.difficulty !== anchor.difficulty) continue;
-            if (cand.skill_level !== anchor.skill_level) continue;
-
-            // Strict topics rule: candidate must include all anchor topics (superset)
-            const cTopics = normTopics(cand.topics);
-            const overlap = topicOverlap(aTopics, cTopics); // 0..1
-            const base = strictOverlapThresholdFor(aTopics.length);
-            const need = anchor.strict_mode ? Math.min(1, base + 0.1) : base;
+        let best: TicketSqlRow | null = null;
+        for (const r of rows) {
+            const cTopics = normTopics(r.topics ?? []);
+            const overlap = topicOverlap(aTopics, cTopics);
             if (overlap < need) continue;
-
-            // FIFO: pick the OLDEST compatible by enqueued_at
-            if (!best || cand.enqueued_at < best.enqueued_at) {
-                best = cand;
-            }
+            if (!best) best = r;
         }
+        if (!best) return null;
 
-        return best;
+        return {
+            ticket_id: best.ticket_id,
+            user_id: best.user_id,
+            difficulty: best.difficulty as Difficulty,
+            topics: best.topics ?? [],
+            skill_level: best.skill_level as SkillLevel,
+            strict_mode: best.strict_mode,
+            status: best.status as TicketStatus,
+            enqueued_at: toTimestamp(new Date(best.enqueued_at)),
+            last_seen_at: toTimestamp(new Date(best.last_seen_at)),
+            timeout_at: best.timeout_at ? toTimestamp(new Date(best.timeout_at)) : null,
+            pair_id: best.pair_id ?? null,
+        };
     },
 
     /**
-     * FLEXIBLE partner search:
+     * FLEXIBLE partner search (filter in SQL, score in JS):
      * Score = 0.6 * topicDistance + 0.2 * difficultyMismatch + 0.2 * skillMismatch
      * - Lower score is better
      * - Ties broken by FIFO
@@ -165,63 +315,93 @@ export const MatchingRepo = {
         const relaxDifficulty = !!anchor.relax_difficulty;
         const relaxSkill = !!anchor.relax_skill;
 
+        const pool = await getConnectionPool();
+        const { rows } = await pool.query<TicketSqlRow>(
+            `select *
+                from tickets
+             where status = 'QUEUED'
+               and ticket_id <> $1
+               and user_id <> $2
+               and ($3::boolean or difficulty = $4)
+               and ($5::boolean or skill_level = $6)
+             order by enqueued_at asc
+             limit 200`,
+            [anchor.ticket_id, anchor.user_id, relaxDifficulty, anchor.difficulty, relaxSkill, anchor.skill_level]
+        );
+
         const aTopics = normTopics(anchor.topics);
+        const scored: Array<{ r: TicketSqlRow; score: number }> = [];
 
-        // Build candidates with a score: lower is better
-        // Base: 1 - topicCoverage; add small penalties with mismatches.
-        const scored: Array<{ cand: TicketDbRow; score: number }> = [];
-
-        for (const cand of tickets.values()) {
-            if (cand.status !== "QUEUED") continue;
-            if (cand.ticket_id === anchor.ticket_id) continue;
-            if (cand.user_id === anchor.user_id) continue; // avoid matching same user's multiple tickets
-
-            // Difficulty/skill filters (only enforce when not relaxed)
-            if (!relaxDifficulty && cand.difficulty !== anchor.difficulty) continue;
-            if (!relaxSkill && cand.skill_level !== anchor.skill_level) continue;
-
-            // Topic component
-            const cTopics = normTopics(cand.topics);
-            const coverage = ignoreTopics ? 1 : (1 - topicDistance(aTopics, cTopics)); // 0..1
+        for (const r of rows) {
+            const cTopics = normTopics(r.topics ?? []);
+            const coverage = ignoreTopics ? 1 : (1-topicDistance(aTopics, cTopics));
             const topicComponent = ignoreTopics ? 0.5 : (1 - coverage);
-
-            // Small penalties if relaxed (so that exact matches tend to win)
-            const diffPenalty = (relaxDifficulty && cand.difficulty !== anchor.difficulty) ? 0.2 : 0;
-            const skillPenalty = (relaxSkill && cand.skill_level !== anchor.skill_level) ? 0.2 : 0;
-
-            const score = topicComponent + diffPenalty + skillPenalty; // lower is better
-            scored.push({ cand, score });
+            const diffPenalty = relaxDifficulty && r.difficulty !== anchor.difficulty ? 0.2 : 0;
+            const skillPenalty = relaxSkill && r.skill_level !== anchor.skill_level ? 0.2 : 0;
+            scored.push({ r, score: topicComponent + diffPenalty + skillPenalty });
         }
+        scored.sort((x, y) => x.score - y.score);
 
-        if (!scored.length) return null;
+        const best = scored[0]?.r;
+        if (!best) return null;
 
-        // sort by score asc; tie-break by oldest enqueued_at (FIFO)
-        scored.sort((x, y) => {
-            const byScore = x.score - y.score // primary: lower score wins
-            if (byScore !== 0) return byScore;
-            return x.cand.enqueued_at - y.cand.enqueued_at; // tie-break: older first
-        });
-
-        return scored[0].cand ?? null;
-        },
+        return {
+            ticket_id: best.ticket_id,
+            user_id: best.user_id,
+            difficulty: best.difficulty as Difficulty,
+            topics: best.topics ?? [],
+            skill_level: best.skill_level as SkillLevel,
+            strict_mode: best.strict_mode,
+            status: best.status as TicketStatus,
+            enqueued_at: toTimestamp(new Date(best.enqueued_at)),
+            last_seen_at: toTimestamp(new Date(best.last_seen_at)),
+            timeout_at: best.timeout_at ? toTimestamp(new Date(best.timeout_at)) : null,
+            pair_id: best.pair_id,
+            // keep optional relax flags
+            relax_topics: anchor.relax_topics,
+            relax_difficulty: anchor.relax_difficulty,
+            relax_skill: anchor.relax_skill,
+        };
+    },
 
         async findPairByTicketId(ticketId: string): Promise<PairDbRow | null> {
-            for (const p of pairs.values()) {
-                if (p.ticket_id_a === ticketId || p.ticket_id_b === ticketId) {
-                    return p;
-                }
-            }
-            return null;
+            const pool = await getConnectionPool();
+            const { rows } = await pool.query(`
+                select * from pairs where ticket_id_a = $1 or ticket_id_b = $1 limit 1`, 
+                [ticketId]
+            );
+            const p = rows[0];
+            if (!p) return null;
+            return {
+                pair_id: p.pair_id,
+                ticket_id_a: p.ticket_id_a,
+                ticket_id_b: p.ticket_id_b,
+                matched_at: toTimestamp(new Date(p.matched_at)),
+                strict_mode: p.strict_mode,
+                question_id: p.question_id ?? null,
+                collaboration_id: p.collaboration_id ?? null,
+                session_id: p.session_id ?? null,
+            };
         },
 
         async attachSession(pairId: string, sessionId: string): Promise<PairDbRow | null> {
-            const p = pairs.get(pairId);
+            const pool = await getConnectionPool();
+            const { rows } = await pool.query(`
+                update pairs set collaboration_id = $2, session_id = $2 where pair_id = $1 returning *`,
+                [pairId, sessionId]
+            );
+            const p = rows[0];
             if (!p) return null;
-            p.collaboration_id = sessionId;
-            // expose both keys if different layers read different names
-            p.session_id= sessionId;
-            pairs.set(pairId, p);
-            return p;
+            return {
+                pair_id: p.pair_id,
+                ticket_id_a: p.ticket_id_a,
+                ticket_id_b: p.ticket_id_b,
+                matched_at: toTimestamp(new Date(p.matched_at)),
+                strict_mode: p.strict_mode,
+                question_id: p.question_id ?? null,
+                collaboration_id: p.collaboration_id ?? null,
+                session_id: p.session_id ?? null,
+            };
         },
 
         /**
@@ -229,61 +409,162 @@ export const MatchingRepo = {
          * Returns the new PairDbRow, or null if either ticket is no longer QUEUED.
          */
         async markMatched(aId: string, bId: string): Promise<PairDbRow | null> {
-            const a = tickets.get(aId);
-            const b = tickets.get(bId);
-            if (!a || !b) throw new Error("Tickets not found");
-            if (a.status !== "QUEUED" || b.status !== "QUEUED") return null;
-            a.status = "MATCHED";
-            b.status = "MATCHED";
-            tickets.set(aId, a);
-            tickets.set(bId, b);
+           const pool = await getConnectionPool();
+           const client = await pool.connect();
+           try {
+            await client.query("begin");
 
-            const p: PairDbRow = {
-                pair_id: uuid(),
-                ticket_id_a: aId,
-                ticket_id_b: bId,
-                matched_at: Date.now(),
-                strict_mode: a.strict_mode && b.strict_mode, // session is strict only if both sides were strict
-                question_id: null,
-                collaboration_id: null,
+            // sort ids so both transactions lock in the same order
+            const [id1, id2] = [aId, bId].sort();
+
+            // Lock both tickets; skip if either is no longer QUEUED
+            const { rows: locked } = await client.query(
+                `select * from tickets
+                 where ticket_id in ($1, $2)
+                 order by ticket_id
+                 for update`,
+                [id1, id2]
+            );
+
+            if (locked.length !== 2) {
+                await client.query("rollback");
+                return null;
+            }
+            const a = locked.find(r => r.ticket_id === aId);
+            const b = locked.find(r => r.ticket_id === bId);
+            if (!a || !b || a.status !== "QUEUED" || b.status !== "QUEUED") {
+                await client.query("rollback");
+                return null;
+            }
+
+            // Update both to MATCHED
+            await client.query(
+                `update tickets set status = 'MATCHED' where ticket_id in ($1, $2)`,
+                [aId, bId]
+            );
+
+            // Create pair
+            const { rows: pairRows } = await client.query(
+                `insert into pairs (ticket_id_a, ticket_id_b, strict_mode)
+                 values ($1, $2, $3) 
+                 returning *`,
+                [aId, bId, a.strict_mode && b.strict_mode]
+            );
+
+            const pair = pairRows[0];
+            // back-fill pair_id to tickets 
+            await client.query(
+                `update tickets set pair_id = $2 where ticket_id = $1`,
+                [aId, pair.pair_id]
+            );
+            await client.query(
+                `update tickets set pair_id = $2 where ticket_id = $1`,
+                [bId, pair.pair_id]
+            );
+
+            await client.query("commit");
+
+            return {
+                pair_id: pair.pair_id,
+                ticket_id_a: pair.ticket_id_a,
+                ticket_id_b: pair.ticket_id_b,
+                matched_at: toTimestamp(new Date(pair.matched_at)),
+                strict_mode: pair.strict_mode,
+                question_id: pair.question_id ?? null,
+                collaboration_id: pair.collaboration_id ?? null,
+                session_id: pair.session_id ?? null,
             };
-            pairs.set(p.pair_id, p);
-            return p;
+           } catch (e) {
+            await client.query("rollback");
+            throw e;
+           } finally {
+            client.release();
+           }
         },
 
         /** Extend the timeout window while still QUEUED (keeps ticket eligible longer)
          * Optionally record which constraints were relaxed.
          */
         async relaxExtend(
-        ticketId: string,
-        extendSeconds: number,
-        opts?: { relaxTopics?: boolean; relaxDifficulty?: boolean; relaxSkill?: boolean }
-        ): Promise<TicketDbRow | null> {
-        const t = tickets.get(ticketId);
-        if (!t || t.status !== "QUEUED") return null;
-
-        // Extend timeout
-        const base = typeof t.timeout_at === "number" ? t.timeout_at : Date.now();
-        t.timeout_at = base + extendSeconds * 1000;
-
-        // NEW: record which aspects have been relaxed
-        if (opts?.relaxTopics) t.relax_topics = true;
-        if (opts?.relaxDifficulty) t.relax_difficulty = true;
-        if (opts?.relaxSkill) t.relax_skill = true;
-
-        tickets.set(t.ticket_id, t);
-        return t;
+            ticketId: string,
+            extendSeconds: number,
+            opts?: { relaxTopics?: boolean; relaxDifficulty?: boolean; relaxSkill?: boolean }
+            ): Promise<TicketDbRow | null> {
+            const pool = await getConnectionPool();
+            // We store relax flags in columns via JSONB or separate cols; to keep things simple,
+            // we'll only extend timeout and rely on the in-memory flags being computed client-side.
+            const { rows } = await pool.query(
+                `update tickets
+                    set timeout_at = coalesce(timeout_at, now()) + make_interval(secs => $2),
+                        last_seen_at = now()
+                 where ticket_id = $1 and status = 'QUEUED' returning *`,
+                [ticketId, extendSeconds]
+            );
+            const r = rows[0];
+            if (!r) return null;
+            return {
+                ticket_id: r.ticket_id,
+                user_id: r.user_id,
+                difficulty: r.difficulty,
+                topics: r.topics ?? [],
+                skill_level: r.skill_level,
+                strict_mode: r.strict_mode,
+                status: r.status,
+                enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+                last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+                timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+                pair_id: r.pair_id ?? null,
+                // relax flags aren't persisted; MatchingService already handles null-safe logic.
+            } as TicketDbRow;
         },
 
         async getTicket(ticketId: string): Promise<TicketDbRow | null> {
-            return tickets.get(ticketId) ?? null;
+            const pool = await getConnectionPool();
+            const { rows } = await pool.query(
+                `select * from tickets where ticket_id = $1`,
+                [ticketId]
+            );
+            const r = rows[0];
+            if (!r) return null;
+            return {
+                ticket_id: r.ticket_id,
+                user_id: r.user_id,
+                difficulty: r.difficulty,
+                topics: r.topics ?? [],
+                skill_level: r.skill_level,
+                strict_mode: r.strict_mode,
+                status: r.status,
+                enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+                last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+                timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+                pair_id: r.pair_id ?? null,
+            };
         },
 
         async findActiveTicketByUser(userId: string): Promise<TicketDbRow | null> {
-            for (const t of tickets.values()) {
-                if (t.user_id === userId && t.status === "QUEUED") return t;
-            }
-            return null;
+            const pool = await getConnectionPool();
+            const { rows } = await pool.query(
+                `select * from tickets
+                  where user_id = $1 and status = 'QUEUED'
+                  order by enqueued_at asc
+                  limit 1`,
+                [userId]
+            );
+            const r = rows[0];
+            if (!r) return null;
+            return {
+                ticket_id: r.ticket_id,
+                user_id: r.user_id,
+                difficulty: r.difficulty,
+                topics: r.topics ?? [],
+                skill_level: r.skill_level,
+                strict_mode: r.strict_mode,
+                status: r.status,
+                enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+                last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+                timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+                pair_id: r.pair_id ?? null,
+            };
         },
 
         /**
@@ -295,37 +576,36 @@ export const MatchingRepo = {
         async cleanup(
             staleHeartbeatSeconds: number
         ): Promise<{ timedOut: number; expired: number }> {
-            const now = Date.now();
-            const staleMs = Math.max(0, staleHeartbeatSeconds * 1000);
+            const pool = await getConnectionPool();
 
-            let timedOut = 0;
-            let expired = 0;
+            const { rows: toExpired } = await pool.query(
+                `update tickets
+                    set status = 'EXPIRED'
+                 where status = 'QUEUED'
+                    and now() - last_seen_at > make_interval(secs => $1)
+                 returning *`,
+                [staleHeartbeatSeconds]
+            );
 
-            for (const row of tickets.values()) {
-                if (row.status !== "QUEUED") continue;
-
-                // 1) Hard timeout window passed 
-                if (row.timeout_at !== null && now > row.timeout_at) {
-                    row.status = "TIMEOUT";
-                    tickets.set(row.ticket_id, row);
-                    timedOut++;
-                    continue;
-                }
-
-                // 2) Heartbeat stale beyong threshld -> consider connection dropped
-                if (now - row.last_seen_at > staleMs) {
-                    row.status = "EXPIRED";
-                    tickets.set(row.ticket_id, row);
-                    expired++;
-                    continue;
-                }
-            }
+            const { rows: toTimeout } = await pool.query(
+                `update tickets 
+                    set status = 'TIMEOUT'
+                 where status = 'QUEUED'
+                    and timeout_at is not null
+                    and now() > timeout_at
+                 returning 1`
+            );
             
-            return { timedOut, expired };
+            return { timedOut: toTimeout.length, expired: toExpired.length }
         },     
 
         // DEV-ONLY getters (used by /api/v1/matching?dump=1)
-        __getTickets(): Map<string, TicketDbRow> { return tickets; },
-        __getPairs(): Map<string, PairDbRow> { return pairs; },
+        __getTickets(): Map<string, TicketDbRow> { 
+            // not meaningful for DB; return empty Map for /dump compatibility
+            return new Map() 
+        },
+        __getPairs(): Map<string, PairDbRow> {
+            return new Map(); 
+        },
     };
 

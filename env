@@ -1,5 +1,0 @@
-DB_USER="postgres"
-DB_PASS="G_V3zt`79VE}t$\9"
-DB_NAME="peerprep_db"
-INSTANCE_CONNECTION_NAME="peerprep-474607:asia-southeast1:peerprep33"
-GOOGLE_APPLICATION_CREDENTIALS="./peerprep-474607-f00016426a4f.json"

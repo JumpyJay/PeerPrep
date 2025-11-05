@@ -112,6 +112,7 @@ export const SKILL_LEVELS: SkillLevel[] = ["BEGINNER", "INTERMEDIATE", "ADVANCED
 export interface TicketDbRow {
     ticket_id: string;
     user_id: string;
+    pair_id: string | null;
     difficulty: Difficulty;
     topics: string[]; 
     skill_level: SkillLevel;
