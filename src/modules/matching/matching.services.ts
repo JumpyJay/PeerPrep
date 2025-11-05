@@ -401,12 +401,8 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
     const extendSeconds = req.extendSeconds ?? CONFIG.defaultTicketTimeoutSeconds;
 
     // Extend timeout; keep status QUEUED if applicable
-    const row = await MatchingRepo.relaxExtend(req.ticketId, extendSeconds, {
-      relaxTopics: !!req.relaxTopics,
-      relaxDifficulty: !!req.relaxDifficulty,
-      relaxSkill: !!req.relaxSkill,
-    });
-
+    const row = await MatchingRepo.relaxExtend(req.ticketId, extendSeconds);
+    
     if (!row || row.status !== "QUEUED") return null;
 
     // Inject the requested relax flags into the working row (not persisted).

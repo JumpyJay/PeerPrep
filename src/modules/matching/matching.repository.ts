@@ -489,7 +489,7 @@ export const MatchingRepo = {
         async relaxExtend(
             ticketId: string,
             extendSeconds: number,
-            // opts?: { relaxTopics?: boolean; relaxDifficulty?: boolean; relaxSkill?: boolean }
+            // _opts?: { relaxTopics?: boolean; relaxDifficulty?: boolean; relaxSkill?: boolean }
             ): Promise<TicketDbRow | null> {
             const pool = await getConnectionPool();
             // We store relax flags in columns via JSONB or separate cols; to keep things simple,
