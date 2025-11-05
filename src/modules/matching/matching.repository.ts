@@ -123,9 +123,10 @@ export const MatchingRepo = {
                 timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
                 pair_id: r.pair_id ?? null,
             };
-        } catch (e: any) {
+        } catch (err: unknown) {
+            const code = (err as { code?: string })?.code; 
             // 23505 = unique_violation (our partial index ux_ticket_user_open)
-            if (e?.code === "23505") {
+            if (code === "23505") {
                 // Return the existing open ticket instead of crashing
                 const { rows } = await pool.query(
                     `select *
@@ -154,7 +155,7 @@ export const MatchingRepo = {
             }
 
             // return if it's not a unique-violation
-            throw e;
+            throw err;
         }
     },
 
@@ -488,7 +489,7 @@ export const MatchingRepo = {
         async relaxExtend(
             ticketId: string,
             extendSeconds: number,
-            opts?: { relaxTopics?: boolean; relaxDifficulty?: boolean; relaxSkill?: boolean }
+            // opts?: { relaxTopics?: boolean; relaxDifficulty?: boolean; relaxSkill?: boolean }
             ): Promise<TicketDbRow | null> {
             const pool = await getConnectionPool();
             // We store relax flags in columns via JSONB or separate cols; to keep things simple,
