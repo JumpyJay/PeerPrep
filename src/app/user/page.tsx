@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Cookies from "js-cookie";
 
 export default function UserPage() {
   const [email, setEmail] = useState("");
@@ -14,8 +15,8 @@ export default function UserPage() {
     setMessage("");
 
     const payload = isRegister
-        ? { action: "register", email, username, password }
-        : { action: "login", email, password };
+      ? { action: "register", email, username, password }
+      : { action: "login", email, password };
 
     try {
       const res = await fetch("/api/v1/user", {
@@ -28,7 +29,10 @@ export default function UserPage() {
       if (!res.ok) throw new Error(data.error || "Something went wrong");
 
       setMessage(data.message);
-      if (!isRegister && data.token) localStorage.setItem("token", data.token);
+      // store in cookies
+      // to be accessible to middle which lives at the edge
+      if (!isRegister && data.token)
+        Cookies.set("token", data.token, { expires: 1 });
 
       setEmail("");
       setPassword("");
@@ -44,9 +48,10 @@ export default function UserPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      
       <div className="flex justify-between items-center bg-gray-100 px-6 py-4 border-b">
-        <h1 className="font-mono text-lg font-semibold text-foreground">PeerPrep</h1>
+        <h1 className="font-mono text-lg font-semibold text-foreground">
+          PeerPrep
+        </h1>
         <div className="space-x-4 text-sm">
           <button
             onClick={() => setIsRegister(false)}
@@ -63,12 +68,12 @@ export default function UserPage() {
         </div>
       </div>
 
-      
       <div className="flex-grow flex items-center justify-center bg-white">
         <div className="w-full max-w-sm text-center px-6">
           <h2 className="text-2xl font-semibold mb-2">Welcome to PeerPrep</h2>
           <p className="text-gray-600 mb-6 text-sm">
-            A free platform to prepare for technical interviews<br />
+            A free platform to prepare for technical interviews
+            <br />
             for students, by students.
           </p>
 
@@ -110,9 +115,7 @@ export default function UserPage() {
             </button>
           </form>
 
-          {message && (
-            <p className="mt-4 text-red-500 text-sm">{message}</p>
-          )}
+          {message && <p className="mt-4 text-red-500 text-sm">{message}</p>}
         </div>
       </div>
     </div>
