@@ -1,4 +1,4 @@
-export function decodeJwtPayload(token: any) {
+export function decodeJwtPayload(token: string) {
   try {
     const base64Url = token.split(".")[1]; // Get the payload part
     const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
