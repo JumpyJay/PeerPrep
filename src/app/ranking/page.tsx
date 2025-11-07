@@ -1,11 +1,6 @@
-// This marks the file as a "Client Component".
-// It's necessary because we need to use React hooks like useState and useEffect.
 'use client';
 
-// --- Imports ---
-// We import React hooks to manage state (useState) and run code on load (useEffect).
 import { useState, useEffect, FormEvent } from 'react';
-// We import all the pre-built UI components (Cards, Tables, etc.)
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';

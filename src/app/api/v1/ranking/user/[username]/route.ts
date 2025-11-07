@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-// Make sure this path points to your service file
 import { RankingService } from "@/modules/ranking/ranking.service";
 
-// This interface tells TypeScript what 'params' will look like
+
 interface GetParams {
-  params: { username: string }; // This now matches your folder name
+  params: { username: string }; 
 }
 
 export async function GET(request: Request, { params }: GetParams) {
@@ -12,7 +11,7 @@ export async function GET(request: Request, { params }: GetParams) {
     // 1. Get the username from the URL
     const { username } = params;
 
-    // 2. Call your service (which calls the repository)
+    // 2. Call service (which calls the repository)
     const userRank = await RankingService.getUserRank(username);
 
     // 3. Handle "User not found"
