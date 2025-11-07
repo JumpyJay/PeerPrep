@@ -28,6 +28,8 @@ export function CodeEditor(params: CodeEditorProps) {
     const onConnect = () => {
       setConnected(true);
       console.log("[socket] connected", s.id);
+      // join a room
+      s.emit("join-session", params.sessionId);
     };
     const onDisconnect = () => {
       setConnected(false);
@@ -50,7 +52,7 @@ export function CodeEditor(params: CodeEditorProps) {
       s.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [params.sessionId]);
 
   // Callback ref: mount quill and bind handler immediately
   const wrapperRef = useCallback(
@@ -78,8 +80,8 @@ export function CodeEditor(params: CodeEditorProps) {
         q.root.classList.add("font-mono");
 
         // Seed content
-        q.disable();
-        q.setText("loading...");
+        // q.disable();
+        // q.setText("loading...");
 
         // attach handler
         const onTextChange = (delta: any, _old: any, source: string) => {
