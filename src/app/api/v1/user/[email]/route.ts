@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, context: Ctx) {
   }
 
   // 2) Await params, then decode
-  const { email } = await context.params; // 👈 fix: await
+  const { email } = await context.params; 
   const decodedEmail = decodeURIComponent(email);
 
   // 3) DB call + error handling

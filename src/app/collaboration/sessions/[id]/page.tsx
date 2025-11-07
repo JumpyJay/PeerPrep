@@ -16,6 +16,7 @@ export default function CollaborationPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = Number(params.id);
+  if (Number.isNaN(sessionId)) return null;
   const [userEmail, setUserEmail] = useState<string>("");
   const [session, setSession] = useState<Session>();
   const [question, setQuestion] = useState<Question>();
@@ -54,58 +55,67 @@ export default function CollaborationPage() {
   }, [sessionId]);
 
   useEffect(() => {
-    const checkAuthenticated = () => {
-      // retrieve user token from cookie
-      const rawToken = Cookies.get("token");
-      if (rawToken) {
-        const myToken = decodeJwtPayload(rawToken);
-        // if user email does not match any of the session users
-        // redirect to home page with a toast
-        if (
-          myToken &&
-          myToken.id != session?.user1_email &&
-          myToken.id != session?.user2_email
-        ) {
-          router.push("/");
-          toast.error("You are not authorized to access this page.");
-        } else if (session?.is_completed) {
-          router.push("/");
-          toast.error("Session has already been completed.");
-        } else {
-          // user is authorised, set user email state
-          setUserEmail(String(myToken.id));
-        }
-      } else {
-        // Handle case where there is no token
-        toast.error("You are not logged in.");
-        window.location.href = "/";
-      }
-    };
-
-    const fetchQuestion = async () => {
-      try {
-        const questionResponse = await fetch(
-          `/api/v1/question/${session?.question_id}`,
-          {
-            headers: { Authorization: "Bearer readerToken" },
-          }
-        );
-        // await JSON from question API
-        const question = await questionResponse.json();
-        // set question state
-        setQuestion(question);
-      } catch (error) {
-        console.error("Error fetching question:", error);
-      }
-    };
-
-    // double check session is set
-    if (session) {
-      checkAuthenticated();
-      fetchQuestion();
+  const checkAuthenticated = () => {
+    const rawToken = Cookies.get("token");
+    if (!rawToken) {
+      toast.error("You are not logged in.");
+      router.push("/");
+      return;
     }
-    // this effect depends on session state
-  }, [session, router]);
+
+    const my = decodeJwtPayload(rawToken);     // JwtPayload | null
+    if (!my) {
+      toast.error("Invalid or expired login.");
+      router.push("/");
+      return;
+    }
+
+    // Prefer email, fall back to id
+    const email = String(my.email ?? my.id ?? "");
+    if (!email) {
+      toast.error("Missing user identity.");
+      router.push("/");
+      return;
+    }
+
+    if (session?.is_completed) {
+      toast.error("Session has already been completed.");
+      router.push("/");
+      return;
+    }
+
+    const notParticipant =
+      email !== session?.user1_email && email !== session?.user2_email;
+
+    if (notParticipant) {
+      toast.error("You are not authorized to access this page.");
+      router.push("/");
+      return;
+    }
+
+    setUserEmail(email);
+  };
+
+  const fetchQuestion = async () => {
+    if (!session?.question_id) return;
+    try {
+      const questionResponse = await fetch(
+        `/api/v1/question/${session.question_id}`,
+        { headers: { Authorization: "Bearer readerToken" } }
+      );
+      const q = await questionResponse.json();
+      setQuestion(q);
+    } catch (error) {
+      console.error("Error fetching question:", error);
+    }
+  };
+
+  if (session) {
+    checkAuthenticated();
+    fetchQuestion();
+  }
+}, [session, router]);
+
 
   useEffect(() => {
     // define a function to fetch attempt history
@@ -143,19 +153,14 @@ export default function CollaborationPage() {
       {/* coding UI */}
       <div className="flex-1 min-w-0">
         {question && session && (
-          <CodingInterface sessionId={sessionId} question={question} />
+          <CodingInterface sessionId={sessionId} question={question} attempts={attempts}/>
         )}
       </div>
 
       {/* Right column: Chat*/}
       {session && (
         <div className="w-[22rem] min-w-[18rem] max-w-[26rem] border-l border-border md:w-[24rem]">
-          {(() => {
-            const rawToken = Cookies.get("token");
-            const payload = rawToken ? decodeJwtPayload(rawToken) : null;
-            const me = (payload?.email || payload?.id || "me@example.com").toString();
-            return <ChatPanel sessionId={sessionId} me={me} />;
-          })()}
+          <ChatPanel sessionId={sessionId} me={userEmail || "me@example.com"} />
       </div>
     )}
   </div>
