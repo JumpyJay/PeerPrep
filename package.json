@@ -3,16 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm:dev:next\" \"npm:dev:server\"",
-    "dev:next": "next dev --turbopack",
-    "dev:server": "nodemon --exec ts-node src/modules/collaboration/session.server.ts",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
-  },
+  "dev": "concurrently \"npm:dev:next\" \"npm:dev:server\"",
+  "dev:next": "next dev --turbopack",
+  "dev:server": "ts-node-dev src/modules/collaboration/session.server.ts",
+  "build": "next build --turbopack",
+  "start": "next start",
+  "lint": "eslint"
+},
   "dependencies": {
     "@google-cloud/cloud-sql-connector": "^1.8.4",
     "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
     "bcrypt": "^6.0.0",
@@ -47,6 +48,7 @@
     "nodemon": "^3.1.10",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5"
   }
