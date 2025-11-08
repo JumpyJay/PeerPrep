@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Toggle } from "@/components/ui/toggle";
 import { Session } from "@/modules/collaboration/session.types";
 import { ArrowRight } from "lucide-react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function CollaborationPage() {
@@ -28,6 +28,7 @@ export default function CollaborationPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const getInitialsFromEmail = (email: string) => {
     if (!email) return "?";
@@ -251,14 +252,18 @@ export default function CollaborationPage() {
                       </div>
 
                       {/* Navigation Arrow */}
-                      <Link
-                        href={`collaboration/sessions/${session.session_id}`}
+                      <h3
+                        onClick={() =>
+                          router.push(
+                            `collaboration/sessions/${session.session_id}`
+                          )
+                        }
                       >
                         <ArrowRight
                           className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
                           aria-label="View session details"
                         />
-                      </Link>
+                      </h3>
                     </div>
                   </div>
                 </Card>
