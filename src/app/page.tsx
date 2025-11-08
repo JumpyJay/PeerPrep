@@ -3,11 +3,14 @@
 import Cookies from "js-cookie";
 import { decodeJwtPayload } from "@/lib/decodeJWT";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { MatchmakingTab } from "@/components/matchMakingTab";
 import QuestionTab from "@/components/questionTab";
 
 export default function Home() {
   const [userEmail, setUserEmail] = useState<string>("");
+  const router = useRouter();
+
   useEffect(() => {
     const myToken = Cookies.get("token");
 
@@ -18,7 +21,8 @@ export default function Home() {
       console.log("email: " + payload.id);
       console.log("expiration date: " + payload.exp);
     }
-  });
+  }, []);
+
   const [activeTab, setActiveTab] = useState<"matchmaking" | "problems">(
     "matchmaking"
   );
@@ -29,7 +33,7 @@ export default function Home() {
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">CodeMatch</h1>
+            <h1 className="text-2xl font-bold text-foreground">PeerPrep</h1>
             <p className="text-sm text-muted-foreground">
               Collaborative Problem Solving
             </p>
@@ -37,11 +41,19 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-sm font-medium text-foreground">
-                Alex Johnson
+                {userEmail || "Not logged in"}
               </p>
               <p className="text-xs text-muted-foreground">Level 42</p>
             </div>
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600"></div>
+
+            {/* Clickable avatar */}
+            <div
+              onClick={() => router.push("/user/profile")}
+              className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 cursor-pointer hover:opacity-80 transition flex items-center justify-center text-white font-bold"
+              title="Go to your profile"
+            >
+              {userEmail ? userEmail.charAt(0).toUpperCase() : "?"}
+            </div>
           </div>
         </div>
       </header>
