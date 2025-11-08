@@ -1,5 +1,6 @@
 "use client";
 
+import Cookies from "js-cookie";
 import { decodeJwtPayload } from "@/lib/decodeJWT";
 import { useEffect, useState } from "react";
 import { MatchmakingTab } from "@/components/matchMakingTab";
@@ -8,12 +9,13 @@ import QuestionTab from "@/components/questionTab";
 export default function Home() {
   const [userEmail, setUserEmail] = useState<string>("");
   useEffect(() => {
-    const myToken = localStorage.getItem("token");
+    const myToken = Cookies.get("token");
 
     if (myToken) {
       const payload = decodeJwtPayload(myToken);
       setUserEmail(payload.id);
 
+      console.log("email: " + payload.id);
       console.log("expiration date: " + payload.exp);
     }
   });
