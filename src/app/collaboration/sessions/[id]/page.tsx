@@ -38,7 +38,6 @@ export default function CollaborationPage() {
         const questionResponse = await fetch(`/api/v1/question/${question_id}`);
         // await JSON from question API
         const question = await questionResponse.json();
-        console.log("data: ", question);
         // set question state
         setQuestion(question);
       } catch (error) {

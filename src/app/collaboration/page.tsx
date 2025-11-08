@@ -12,6 +12,7 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Toggle } from "@/components/ui/toggle";
 import { Session } from "@/modules/collaboration/session.types";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -19,7 +20,8 @@ import { useEffect, useState } from "react";
 
 export default function CollaborationPage() {
   // initiatialise states
-  const [open, setOpen] = useState<boolean>(false);
+  const [openCreateModal, setOpenCreateModal] = useState<boolean>(false);
+  const [openFilterModal, setOpenFilterModal] = useState<boolean>(false);
   const [user1Email, setUser1Email] = useState<string>("");
   const [user2Email, setUser2Email] = useState<string>("");
   const [questionID, setQuestionID] = useState<number>(0);
@@ -50,7 +52,7 @@ export default function CollaborationPage() {
       }),
     });
     console.log("session created");
-    setOpen(false);
+    setOpenCreateModal(false);
   };
 
   // const fetchQuestionInfoFromID = (id: string) => {
@@ -111,36 +113,59 @@ export default function CollaborationPage() {
               {"Here's a list of all currently active user sessions."}
             </p>
           </header>
-          <div>
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button size="lg">Open Modal</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Session</DialogTitle>
-                  <DialogDescription>
-                    This is a simple create session pop-up.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <p className="text-foreground">questionID</p>
-                  <Input
-                    onChange={(e) => setQuestionID(Number(e.target.value))}
-                  />
+          <div className="flex space-x-1">
+            <div>
+              <Dialog open={openFilterModal} onOpenChange={setOpenFilterModal}>
+                <DialogTrigger asChild>
+                  <Button size="sm">Filter</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Filter Sessions</DialogTitle>
+                    <DialogDescription>
+                      This is a simple filter session pop-up.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <Toggle>Completed</Toggle>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <div>
+              <Dialog open={openCreateModal} onOpenChange={setOpenCreateModal}>
+                <DialogTrigger asChild>
+                  <Button size="sm">Create</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Session</DialogTitle>
+                    <DialogDescription>
+                      This is a simple create session pop-up.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <p className="text-foreground">questionID</p>
+                    <Input
+                      onChange={(e) => setQuestionID(Number(e.target.value))}
+                    />
 
-                  <p className="text-foreground">user1_email</p>
-                  <Input onChange={(e) => setUser1Email(e.target.value)} />
+                    <p className="text-foreground">user1_email</p>
+                    <Input onChange={(e) => setUser1Email(e.target.value)} />
 
-                  <p className="text-foreground">user2_email</p>
-                  <Input onChange={(e) => setUser2Email(e.target.value)} />
+                    <p className="text-foreground">user2_email</p>
+                    <Input onChange={(e) => setUser2Email(e.target.value)} />
 
-                  <Button onClick={() => handleSubmission()} className="w-full">
-                    Create Session
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+                    <Button
+                      onClick={() => handleSubmission()}
+                      className="w-full"
+                    >
+                      Create Session
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </div>
 
@@ -202,6 +227,27 @@ export default function CollaborationPage() {
                     <div className="flex items-center space-x-3 ml-4">
                       <div className="hidden sm:block text-xs font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-1 rounded-md">
                         {session.session_id}
+                      </div>
+
+                      {/* Circle Icon */}
+                      <div className="hidden sm:block">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="transparent"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className={`h-5 w-5 ${
+                            session.is_completed
+                              ? "fill-gray-300"
+                              : "fill-green-400"
+                          }`}
+                        >
+                          <circle cx="12" cy="12" r="10"></circle>
+                        </svg>
                       </div>
 
                       {/* Navigation Arrow */}
