@@ -45,6 +45,9 @@ const CONFIG = {
    * Thresholds live in repo; documented here for clarity.
    */
   doc_minTopicOverlapStrict: 0.6,
+
+  /** Grace period (seconds) to requeue partner after cancel. */
+  partnerRecoveryExtendSeconds: 180,
 };
 
 type EnqueueResult = { ticket: Ticket; existing: boolean};
@@ -300,7 +303,7 @@ export const MatchingService = {
   try {
     await MatchingRepo.cleanup(CONFIG.staleHeartbeatSeconds).catch(() => void 0);
 
-    const anchor = await MatchingRepo.loadAnchorForUpdate(ticketId);
+    const anchor = await MatchingRepo.loadAnchor(ticketId);
     if (!anchor || anchor.status !== "QUEUED") return null;
 
     const getUserId = (r: unknown): string | null => {
@@ -475,6 +478,31 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
     const row = await MatchingRepo.getTicket(ticketId);
     return row ? mapTicket(row) : null;
   },
+
+  /** Cancel even if already MATCHED; re-queue the partner if applicable.
+   *  Returns a small payload so API can inform the UI.
+   */
+  async cancelRecover(ticketId: string): Promise<{
+    cancelled: boolean;
+    partnerRequeuedTicketId: string | null;
+  }> {
+    const { cancelled, partnerRequeued } =
+      await MatchingRepo.cancelWithPartnerRecovery(ticketId, {
+        partnerExtendSeconds: CONFIG.partnerRecoveryExtendSeconds ?? 180,
+      });
+
+    // Optional: immediately try to rematch the partner to reduce downtime.
+    if (partnerRequeued?.ticket_id) {
+      // Intentional fire-and-forget; swallow errors to keep DELETE fast.
+      void MatchingService.tryMatch(partnerRequeued.ticket_id).catch(() => undefined);
+    }
+
+    return {
+      cancelled: !!cancelled,
+      partnerRequeuedTicketId: partnerRequeued?.ticket_id ?? null,
+    };
+  },
+
 
   /**
    * ---------------------------------

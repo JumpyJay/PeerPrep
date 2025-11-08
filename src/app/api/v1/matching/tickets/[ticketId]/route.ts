@@ -4,16 +4,25 @@ import { MatchingService } from "@/modules/matching/matching.services";
 import { MatchingRepo } from "@/modules/matching/matching.repository";
 
 export const runtime = "nodejs";
-const JSON_HEADERS = { "content-type": "application/json" as const };
 
-type Params = { ticketId: string };
-type Ctx = { params: Promise<Params> }; // <-- note Promise here
+const JSON_HEADERS = { 
+  "content-type": "application/json" as const, 
+  "cache-control": "no-store" as const, 
+};
+
+const ALLOWED_ORIGINS = new Set([
+  process.env.FRONTEND_ORIGIN ?? "http://localhost:3000",
+]);
 
 // -------------------------
 // Helpers
 // -------------------------
-function withCors(res: NextResponse) {
-  res.headers.set("Access-Control-Allow-Origin", "*");
+function withCors(res: NextResponse, origin?: string) {
+  const allowOrigin = origin && ALLOWED_ORIGINS.has(origin)
+    ? origin
+    : Array.from(ALLOWED_ORIGINS)[0];
+
+  res.headers.set("Access-Control-Allow-Origin", allowOrigin);
   res.headers.set("Access-Control-Allow-Methods", "GET, DELETE, OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Vary", "Origin");
@@ -33,169 +42,153 @@ function pickString(obj: Record<string, unknown>, keys: string[]): string | null
   return null;
 }
 
-/**
- * Extracts a canonical session/pair identifier from any variant returned by the service.
- * Supports: session_id, sessionId, pair_id, pairId
- */
-function getSessionIdFromResult(result: unknown): string | null {
-  if (!isRecord(result)) return null;
-  return pickString(result, ["session_id", "sessionId", "pair_id", "pairId"]);
-}
-
-export async function OPTIONS() {
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get("origin") || undefined;
   return withCors(
     new NextResponse(null, {
       status: 204,
       headers: {
         "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Cache-Control": "no-store",
       },
-    })
+    }),
+    origin
   );
 }
+
 
 /**
  * -------------------------------------------------
  * GET /api/v1/matching/tickets/[ticketId]
  * -------------------------------------------------
- * Polling endpoint used by the front-end while a user is waiting
- * for a match. Checks whether the given ticket has been paired yet.
+ * Pure status endpoint (no matching here). Matching is done by job/worker.
  */
-export async function GET(
-  _req: NextRequest,
-  context: Ctx
-) {
+export async function GET(req: NextRequest, { params }: { params: { ticketId: string } }) {
+  const origin = req.headers.get("origin") || undefined;
   try {
-    const { ticketId } = await context.params;
+    const { ticketId } = params;
 
-    // Opportunistic housekeeping + matching attempt
-    await MatchingService.housekeep().catch(() => {});
-    const result = await MatchingService.tryMatch(ticketId);
-
-    if (result) {
-      const sessionId = getSessionIdFromResult(result);
-      if (sessionId) {
-        return withCors(
-          NextResponse.json(
-            { status: "matched", session_id: sessionId, result },
-            { headers: JSON_HEADERS }
-          )
-        );
-      }
-      return withCors(
-        NextResponse.json(
-          { status: "matched_pending_session", result },
-          { headers: JSON_HEADERS }
-        )
-      );
-    }
-
-    // No new match formed -> report true ticket state
+    // READ-ONLY: do not call tryMatch() here
     const t = await MatchingService.getTicket(ticketId);
     if (!t) {
       return withCors(
-        NextResponse.json({ status: "not_found" }, { status: 404, headers: JSON_HEADERS })
+        NextResponse.json(
+          { status: "not_found" },
+          { status: 404, headers: JSON_HEADERS }),
+          origin
       );
     }
 
-    switch (t.status) {
-      case "QUEUED":
-        return withCors(NextResponse.json({ status: "searching" }, { headers: JSON_HEADERS }));
-
-      case "CANCELLED":
-        return withCors(NextResponse.json({ status: "cancelled" }, { headers: JSON_HEADERS }));
-
-      case "TIMEOUT":
-        return withCors(NextResponse.json({ status: "timeout" }, { headers: JSON_HEADERS }));
-
-      case "EXPIRED":
-        return withCors(NextResponse.json({ status: "expired" }, { headers: JSON_HEADERS }));
-
-      case "MATCHED": {
-        // If GET hits after pair exists; attempt to surface session id
-        const pair = await MatchingRepo.findPairByTicketId(ticketId);
-        if (!pair) {
-          return withCors(
-            NextResponse.json(
-              { status: "matched_pending_session" },
-              { headers: JSON_HEADERS }
-            )
-          );
-        }
-
-        // Read session/collaboration id from pair with safe narrowing
-        const pairObj = isRecord(pair) ? pair : ({} as Record<string, unknown>);
-        const sessionId =
-          pickString(pairObj, ["session_id", "collaboration_id"]) || null;
-
+    if (t.status === "MATCHED") {
+      const pair = await MatchingRepo.findPairByTicketId(ticketId);
+      if (pair && isRecord(pair)) {
+        const sessionId = 
+          pickString(pair, ["session_id", "collaboration_id"]) || null;
         if (sessionId) {
           return withCors(
             NextResponse.json(
-              {
-                status: "matched",
-                session_id: sessionId,
-                result: isRecord(pair) ? { pairId: pickString(pairObj, ["pair_id"]) } : undefined,
-              },
+              { status: "matched", session_id: sessionId, result: { pairId: pickString(pair, ["pair_id"]) } },
               { headers: JSON_HEADERS }
-            )
+            ),
+            origin
           );
         }
-
         return withCors(
           NextResponse.json(
-            {
-              status: "matched_pending_session",
-              result: isRecord(pair) ? { pairId: pickString(pairObj, ["pair_id"]) } : undefined,
-            },
+            { status: "matched_pending_session", result: { pairId: pickString(pair, ["pair_id"]) } },
             { headers: JSON_HEADERS }
-          )
+          ),
+          origin
         );
       }
-
-      default:
-        return withCors(NextResponse.json({ status: "searching" }, { headers: JSON_HEADERS }));
+      return withCors(
+        NextResponse.json({ status: "matched_pending_session"}, { headers: JSON_HEADERS }),
+          origin
+      );
     }
+
+    // Map other states
+    const map: Record<string, string> = {
+      QUEUED: "searching",
+      RELAXED: "searching",
+      PENDING: "searching",
+      CANCELLED: "cancelled",
+      TIMEOUT: "timeout",
+      EXPIRED: "expired",
+    };
+
+    const status = map[t.status] ?? "searching";
+    return withCors(
+      NextResponse.json({ status }, { headers: JSON_HEADERS }),
+      origin
+    );
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "poll failed";
     return withCors(
-      NextResponse.json({ error: message }, { status: 500, headers: JSON_HEADERS })
+      NextResponse.json(
+        { error: message },
+        { status: 500, headers: JSON_HEADERS }
+      ),
+      origin
     );
   }
 }
 
 // DELETE
 export async function DELETE(
-  _req: NextRequest,
-  context: Ctx 
+  req: NextRequest,
+  { params }: { params: { ticketId: string } }
 ) {
-    const { ticketId } = await context.params;
+  const origin = req.headers.get("origin") || undefined;
+  const { ticketId } = params;
 
   try {
-    const ok = await MatchingService.cancel(ticketId);
+    // Fast path: QUEUED cancel (what you already had)
+    const pre = await MatchingService.cancel(ticketId);
+    if (pre) {
+      return withCors(
+        NextResponse.json(
+          { status: "cancelled", ticket_id: ticketId, partner_requeued_ticket_id: null },
+          { headers: JSON_HEADERS }
+        ),
+        origin
+      );
+    }
 
-    if (!ok) {
-      // Ticket wasn't cancellable (already matched, cancelled, or not found)
+    // Recovery path: handle mid-match cancellation
+    const rec = await MatchingService.cancelRecover(ticketId);
+
+    if (!rec.cancelled) {
+      // still not cancellable or already terminal (idempotent no-op)
       return withCors(
         NextResponse.json(
           { status: "not_cancellable", ticket_id: ticketId },
           { status: 409, headers: JSON_HEADERS }
-        )
+        ),
+        origin
       );
     }
 
     return withCors(
       NextResponse.json(
-        { status: "cancelled", ticket_id: ticketId },
+        {
+          status: rec.partnerRequeuedTicketId
+            ? "cancelled_partner_requeued"
+            : "cancelled",
+          ticket_id: ticketId,
+          partner_requeued_ticket_id: rec.partnerRequeuedTicketId,
+        },
         { headers: JSON_HEADERS }
-      )
+      ),
+      origin
     );
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "cancel failed";
     return withCors(
-      NextResponse.json(
-        { error: message },
-        { status: 500, headers: JSON_HEADERS }
-      )
+      NextResponse.json({ error: message }, { status: 500, headers: JSON_HEADERS }),
+      origin
     );
   }
 }
+
