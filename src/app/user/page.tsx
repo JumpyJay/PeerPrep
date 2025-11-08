@@ -36,7 +36,16 @@ export default function UserPage() {
 
       setEmail("");
       setPassword("");
-      if (isRegister) setUsername("");
+      if (isRegister) {
+        // case of successful registration
+        setUsername("");
+        // set tab to login
+        setIsRegister(false);
+      } else {
+        // case of successful login
+        // redirect to home
+        window.location.href = "/";
+      }
     } catch (err: unknown) {
       if (err instanceof Error) {
         throw new Error(err.message);
