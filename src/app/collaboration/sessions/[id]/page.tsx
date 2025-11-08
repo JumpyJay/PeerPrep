@@ -51,7 +51,9 @@ export default function CollaborationPage() {
 
   return (
     <div>
-      <CodingInterface sessionId={sessionId} />
+      {question && session && (
+        <CodingInterface sessionId={sessionId} question={question} />
+      )}
     </div>
   );
 }

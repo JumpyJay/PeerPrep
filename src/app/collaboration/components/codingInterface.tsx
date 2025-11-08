@@ -1,9 +1,11 @@
 "use client";
 import { QuestionPanel } from "./questionPanel";
 import { CodeEditor } from "./codeEditor";
+import { Question } from "@/modules/question/question.types";
 
 interface CodingInterfaceProps {
   sessionId: number;
+  question: Question;
 }
 
 export function CodingInterface(params: CodingInterfaceProps) {
@@ -30,7 +32,7 @@ export function CodingInterface(params: CodingInterfaceProps) {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Question */}
-        <QuestionPanel />
+        <QuestionPanel question={params.question} />
 
         {/* Right Panel - Code Editor */}
         <CodeEditor sessionId={params.sessionId} />
