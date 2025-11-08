@@ -1,7 +1,17 @@
 "use client";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogHeader,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Session } from "@/modules/collaboration/session.types";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -9,6 +19,10 @@ import { useEffect, useState } from "react";
 
 export default function CollaborationPage() {
   // initiatialise states
+  const [open, setOpen] = useState<boolean>(false);
+  const [user1Email, setUser1Email] = useState<string>("");
+  const [user2Email, setUser2Email] = useState<string>("");
+  const [questionID, setQuestionID] = useState<number>(0);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +31,26 @@ export default function CollaborationPage() {
     if (!email) return "?";
     const username = email.split("@")[0];
     return username.substring(0, 2).toUpperCase();
+  };
+
+  const handleSubmission = () => {
+    console.log("questionID: ", questionID);
+    console.log("user1Email: ", user1Email);
+    console.log("user2Email: ", user2Email);
+    // calls the create session api, with respective type
+    fetch("/api/v1/collaboration?type=create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question_id: questionID,
+        user1_email: user1Email,
+        user2_email: user2Email,
+      }),
+    });
+    console.log("session created");
+    setOpen(false);
   };
 
   // const fetchQuestionInfoFromID = (id: string) => {
@@ -68,14 +102,47 @@ export default function CollaborationPage() {
   return (
     <div className="bg-gray-100 dark:bg-gray-950 min-h-screen p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-2xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            All Sessions
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            {"Here's a list of all currently active user sessions."}
-          </p>
-        </header>
+        <div className="flex flex-row items-center justify-between">
+          <header className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              All Sessions
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              {"Here's a list of all currently active user sessions."}
+            </p>
+          </header>
+          <div>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button size="lg">Open Modal</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Session</DialogTitle>
+                  <DialogDescription>
+                    This is a simple create session pop-up.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <p className="text-foreground">questionID</p>
+                  <Input
+                    onChange={(e) => setQuestionID(Number(e.target.value))}
+                  />
+
+                  <p className="text-foreground">user1_email</p>
+                  <Input onChange={(e) => setUser1Email(e.target.value)} />
+
+                  <p className="text-foreground">user2_email</p>
+                  <Input onChange={(e) => setUser2Email(e.target.value)} />
+
+                  <Button onClick={() => handleSubmission()} className="w-full">
+                    Create Session
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
 
         <ul className="space-y-4">
           {[...sessions]
