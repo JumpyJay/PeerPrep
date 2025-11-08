@@ -57,6 +57,28 @@ export class SessionRepository {
     }
   }
 
+  // define fund session function
+  public async findSessionById(session_id: number): Promise<Session> {
+    if (!this.pool) {
+      this.pool = await getConnectionPool();
+    }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        "SELECT * FROM sessions WHERE session_id = $1",
+        [session_id]
+      );
+      // result.rows property contains the array of records from the database.
+      return result.rows[0];
+    } catch (error) {
+      console.error("Error finding session in database:", error);
+      throw new Error("Could not find session.");
+    } finally {
+      // release the client back to the pool.
+      client.release();
+    }
+  }
+
   // define termination session function
   public async finishSession(session_id: string): Promise<Session> {
     if (!this.pool) {

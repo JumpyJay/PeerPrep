@@ -29,8 +29,13 @@ export class SessionService {
     user1_email: string,
     user2_email: string
   ): Promise<Session> {
-    console.log("UserService: Creating a session.");
+    console.log("CollabService: Creating a session.");
     return this.repository.createSession(question_id, user1_email, user2_email);
+  }
+
+  public async findSession(session_id: number): Promise<Session> {
+    console.log("CollabService: Finding a session.");
+    return this.repository.findSessionById(session_id);
   }
 
   // function for terminating a session

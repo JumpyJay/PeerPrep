@@ -8,13 +8,13 @@ import { Session } from "@/modules/collaboration/session.types";
  */
 export async function GET() {
   try {
-    // 1. Call your service layer to get data
+    // calls service layer to get data
     const sessions: Session[] = await sessionService.getAllSessions();
 
-    // 2. Return a successful JSON response
+    // returns a successful JSON response
     return NextResponse.json(sessions, { status: 200 });
   } catch (error) {
-    // 3. Handle errors
+    // handle errors
     console.error("API Error [GET]:", error);
     return NextResponse.json(
       { error: "Failed to fetch sessions." },
@@ -33,11 +33,11 @@ export async function POST(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get("type");
     const body = await request.json();
-    const { question_id, user1_email, user2_email } = body;
 
     // check for type
     // case when type is "create"
     if (type === "create") {
+      const { question_id, user1_email, user2_email } = body;
       // simple validation
       if (!question_id || !user1_email || !user2_email) {
         return NextResponse.json(
@@ -57,6 +57,23 @@ export async function POST(request: NextRequest) {
 
       // return a 201 Created status, a successful POST
       return NextResponse.json(newSession, { status: 201 });
+    } else if (type == "findsession") {
+      const { session_id } = body;
+      // simple validation if session_id is passed
+      if (!session_id) {
+        return NextResponse.json(
+          {
+            error: "Missing required fields: session_id",
+          },
+          { status: 400 }
+        );
+      }
+      const foundSession: Session = await sessionService.findSession(
+        session_id
+      );
+
+      // return a 200 Found status, and the session info found
+      return NextResponse.json(foundSession, { status: 200 });
     } else {
       // handle other types or missing type
       return NextResponse.json(
