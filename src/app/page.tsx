@@ -2,8 +2,7 @@
 
 import Cookies from "js-cookie";
 import { decodeJwtPayload } from "@/lib/decodeJWT";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { MatchmakingTab } from "@/components/matchMakingTab";
 import QuestionTab from "@/components/questionTab";
 
@@ -13,19 +12,23 @@ export default function Home() {
 
   useEffect(() => {
     const myToken = Cookies.get("token");
-
-    if (myToken) {
-      const payload = decodeJwtPayload(myToken);
-      setUserEmail(payload.id);
-
-      console.log("email: " + payload.id);
-      console.log("expiration date: " + payload.exp);
+    if (!myToken) return;
+    const payload = decodeJwtPayload(myToken);
+    const email = typeof payload?.id === "string" ? payload.id : "";
+    if (email) {
+      setUserEmail(email);
     }
   }, []);
-
   const [activeTab, setActiveTab] = useState<"matchmaking" | "problems">(
     "matchmaking"
   );
+  const displayName = useMemo(() => {
+    if (userEmail) {
+      const [name] = userEmail.split("@");
+      return name || userEmail;
+    }
+    return "Guest";
+  }, [userEmail]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -86,7 +89,7 @@ export default function Home() {
 
       {/* Tab Content */}
       <div className="mx-auto max-w-7xl px-6 py-8">
-        {activeTab === "matchmaking" && <MatchmakingTab />}
+        {activeTab === "matchmaking" && <MatchmakingTab userId={userEmail} />}
         {activeTab === "problems" && <QuestionTab />}
       </div>
     </div>
