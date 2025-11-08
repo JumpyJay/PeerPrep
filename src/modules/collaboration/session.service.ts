@@ -22,6 +22,32 @@ export class SessionService {
     console.log("UserService: Fetching all sessions.");
     return this.repository.findAll();
   }
+
+  // function for creating a session
+  public async createSession(
+    question_id: string,
+    user1_email: string,
+    user2_email: string
+  ): Promise<Session> {
+    console.log("CollabService: Creating a session.");
+    return this.repository.createSession(question_id, user1_email, user2_email);
+  }
+
+  public async findSession(session_id: number): Promise<Session> {
+    console.log("CollabService: Finding a session.");
+    return this.repository.findSessionById(session_id);
+  }
+
+  // function for terminating a session
+  // create row in submissions table
+  public async terminateSession(
+    session_id: string,
+    code_solution: string
+  ): Promise<Session> {
+    console.log("UserService: Terminating a session.");
+    this.repository.createSubmission(session_id, code_solution);
+    return this.repository.finishSession(session_id);
+  }
 }
 
 // Export a singleton instance of the service, injecting the repository instance.
