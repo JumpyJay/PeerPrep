@@ -2,20 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { io } from "socket.io-client";
 import "quill/dist/quill.snow.css";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 interface CodeEditorProps {
   sessionId: number;
 }
 
-const defaultCode = `function twoSum(nums: number[], target: number): number[] {
-  // Write your solution here
-};`;
+const defaultCode = ``;
 
 export function CodeEditor(params: CodeEditorProps) {
   // store quill and socket instance that persists between re-render
+  const router = useRouter();
   const quillRef = useRef<any>(null);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const [connected, setConnected] = useState(false);
@@ -41,14 +41,37 @@ export function CodeEditor(params: CodeEditorProps) {
       q.updateContents(payload, "api"); // apply remote ops when editor exists
     };
 
+    const onPartnerDisconnect = () => {
+      // Show the toast
+      toast.warning(
+        "Partner disconnected, session will be terminated in 10 seconds."
+      );
+    };
+
+    const onTerminateSession = () => {
+      console.log("[socket] Session terminated by server.");
+
+      // Show the toast
+      toast.error(
+        "Session Terminated, You were the only one in the room for 10 seconds."
+      );
+
+      // Navigate to homepage
+      router.push("/");
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("receive-code", onReceiveCode);
+    s.on("terminate-session", onTerminateSession);
+    s.on("partner-disconnect", onPartnerDisconnect);
 
     return () => {
       s.off("connect", onConnect);
       s.off("disconnect", onDisconnect);
       s.off("receive-code", onReceiveCode);
+      s.off("terminate-session", onTerminateSession);
+      s.off("partner-disconnect", onPartnerDisconnect);
       s.disconnect();
       socketRef.current = null;
     };
