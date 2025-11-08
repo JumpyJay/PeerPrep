@@ -29,7 +29,7 @@ import type {
 } from "./matching.types";
 import { mapTicket, mapMatchResult } from "./matching.types";
 import { questionService } from "../question/question.service";
-import { Question } from "../question/question.types";
+import type { QuestionSelectionParams } from "../question/question.types";
 import { normalizeDifficulty, type Difficulty } from "./matching.utils";
 
 /** Centralized knobs (document these in your design doc) */
@@ -73,35 +73,6 @@ let createCollabSession: CreateSessionFn | null = null;
 function setCollaborationCreator(fn: CreateSessionFn | null) {
   createCollabSession = fn;
 }
-
-async function safeGetAllQuestions(): Promise<Question[]> {
-  if (process.env.USE_QUESTION_SERVICE !== "true") {
-    return [];
-  }
-
-  try {
-    // Lazy import so cloud SQL code in question.service doesn't run at module load
-    const mod = await import("../question/question.service");
-
-    // Narrowed dynamic import: check the property exists and is an object
-    const qs = (mod as { questionService?: typeof questionService }).questionService;
-
-    if (qs && typeof qs.getAllQuestions === "function") {
-      const result = await qs.getAllQuestions();
-      return Array.isArray(result) ? result : [];
-    }
-  } catch (e: unknown) {
-    const message =
-      e instanceof Error ? e.message : String(e ?? "unknown error");
-    console.warn(
-      "[MatchingService] question service unavailable - continuing without question data:",
-      message
-    );
-  }
-
-  return [];
-}
-
 
 /** Utility: after the repo returns a Pair, optionally create a collab session and attach it. */
 type CreateSessionResult = { session_id?: string; sessionId?: string };
@@ -181,33 +152,42 @@ async function enrichWithSessionIfConfigured(pair: PairDbRow): Promise<PairDbRow
   }
 }
 
-/**
- * Select a question that best macthes the pair's difficulty and topics.
- * Falls back gracefully if no perfect match exists.
- */
-function pickQuestionForPair(
-  allQs: Question[],
-  difficulty: "EASY" | "MEDIUM" | "HARD",
-  topics: string[]
-): number | null {
-  // normalize casing for easier comparison
-  const diff = difficulty.charAt(0) + difficulty.slice(1).toLowerCase(); // "EASY" -> "Easy"
-  const topicsLower = topics.map(t => t.toLowerCase());
+async function fetchQuestionIdForPair(args: {
+  difficulty: Difficulty | null;
+  topics: string[];
+  users: string[];
+  fallbackKey: string;
+}): Promise<number | null> {
+  if (process.env.USE_QUESTION_SERVICE !== "true") {
+    return null;
+  }
 
-  // Exact difficulty + overlappig tag
-  const overlap = allQs.find(
-    (q) =>
-      q.difficulty === diff &&
-      (q.tags ?? []).some((tag) => topicsLower.includes(tag.toLowerCase()))
-  );
-  if (overlap) return overlap.question_id;
+  const tags = args.topics.filter((t) => typeof t === "string" && t.trim().length > 0);
+  const userIdentity =
+    args.users.filter(Boolean).sort().join("|") || args.fallbackKey;
 
-  // Same difficulty (ignore topics)
-  const sameDiff = allQs.find(q => q.difficulty === diff);
-  if (sameDiff) return sameDiff.question_id;
+  const difficulty =
+    args.difficulty !== null
+      ? (args.difficulty.charAt(0) + args.difficulty.slice(1).toLowerCase())
+      : undefined;
 
-  // fallback to any available question
-  return allQs.length ? allQs[0].question_id : null;
+  const params: QuestionSelectionParams = {
+    difficulty,
+    tags: tags.length > 0 ? tags : undefined,
+    user: userIdentity,
+  };
+
+  try {
+    const selected = await questionService.selectQuestion(params);
+    return selected?.question_id ?? null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      "[MatchingService] question selection failed; continuing without question:",
+      message
+    );
+    return null;
+  }
 }
 
 export const MatchingService = {
@@ -328,13 +308,12 @@ export const MatchingService = {
           const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
           if (!pair) return null;
 
-          const allQs: Question[] = await safeGetAllQuestions();
-
-          // If pickQuestionForPair REQUIRES Difficulty (non-null), default it:
-          const qid = pickQuestionForPair(allQs, (difficulty ?? "EASY") as Difficulty, topics);
-
-          // If your pickQuestionForPair ALLOWS null, use this instead:
-          // const qid = pickQuestionForPair(allQs, difficulty, topics);
+          const qid = await fetchQuestionIdForPair({
+            difficulty,
+            topics,
+            users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
+            fallbackKey: `${anchor.ticket_id}|${partner.ticket_id}`,
+          });
 
           const maybeSessioned = await enrichWithSessionIfConfigured({
             ...pair,
@@ -357,11 +336,12 @@ export const MatchingService = {
           const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
           if (!pair) return null;
 
-          const allQs: Question[] = await safeGetAllQuestions();
-
-          // Same note as above re: default vs null
-          const qid = pickQuestionForPair(allQs, (difficulty ?? "EASY") as Difficulty, topics);
-          // or: const qid = pickQuestionForPair(allQs, difficulty, topics);
+          const qid = await fetchQuestionIdForPair({
+            difficulty,
+            topics,
+            users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
+            fallbackKey: `${anchor.ticket_id}|${partner.ticket_id}`,
+          });
 
           const maybeSessioned = await enrichWithSessionIfConfigured({
             ...pair,
