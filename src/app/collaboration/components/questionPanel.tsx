@@ -54,30 +54,6 @@ export function QuestionPanel(params: questionPanelProps) {
             <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
               <p className="text-foreground">{params.question.question_body}</p>
             </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold text-foreground">Constraints:</h3>
-              <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
-                <li>
-                  <code className="rounded bg-code-bg px-1.5 py-0.5 font-mono text-accent">
-                    2 &lt;= nums.length &lt;= 10⁴
-                  </code>
-                </li>
-                <li>
-                  <code className="rounded bg-code-bg px-1.5 py-0.5 font-mono text-accent">
-                    -10⁹ &lt;= nums[i] &lt;= 10⁹
-                  </code>
-                </li>
-                <li>
-                  <code className="rounded bg-code-bg px-1.5 py-0.5 font-mono text-accent">
-                    -10⁹ &lt;= target &lt;= 10⁹
-                  </code>
-                </li>
-                <li>
-                  <strong>Only one valid answer exists.</strong>
-                </li>
-              </ul>
-            </div>
           </div>
         </TabsContent>
 

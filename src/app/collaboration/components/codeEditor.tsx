@@ -133,36 +133,7 @@ export function CodeEditor(params: CodeEditorProps) {
         </div>
       </div>
 
-      {/* Bottom Panel (unchanged) */}
-      <div className="border-t border-border">
-        <Tabs defaultValue="testcase" className="flex flex-col">
-          <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent px-4">
-            <TabsTrigger
-              value="testcase"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
-            >
-              Testcase
-            </TabsTrigger>
-            <TabsTrigger
-              value="result"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
-            >
-              Test Result
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="testcase" className="h-40 overflow-y-auto p-4">
-            {/* ...inputs... */}
-          </TabsContent>
-          <TabsContent value="result" className="h-40 overflow-y-auto p-4">
-            <p className="text-sm text-muted-foreground">
-              Run your code to see results...
-            </p>
-          </TabsContent>
-        </Tabs>
-      </div>
-
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <Button variant="outline">Run</Button>
         <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
           Submit
         </Button>
