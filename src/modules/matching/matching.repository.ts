@@ -29,6 +29,17 @@ type TicketSqlRow = {
     pair_id: string | null;
 };
 
+type PairSqlRow = {
+  pair_id: string;
+  ticket_id_a: string;
+  ticket_id_b: string;
+  matched_at: string;
+  strict_mode: boolean;
+  question_id: string | null;
+  collaboration_id: string | null;
+  session_id: string | null;
+};
+
 /**
 // --------------------------
 // In-memory state(DEV only)
@@ -79,6 +90,8 @@ function topicDistance(a: string[], b: string[]): number {
     const overlap = inter / denom; // how much of anchor topics are covered
     return 1 - overlap; // 0 = perfect match, 1 = no overlap
 }
+
+
 
 // -------------------------------------------
 // Public Repository API (mock implementation)
@@ -229,7 +242,7 @@ export const MatchingRepo = {
     */
 
     /** Load the anchor ticket that is initating a match attempt */
-    async loadAnchorForUpdate(ticketId: string): Promise<TicketDbRow | null> {
+    async loadAnchor(ticketId: string): Promise<TicketDbRow | null> {
         const pool = await getConnectionPool();
         const { rows } = await pool.query(`select * from tickets where ticket_id = $1`, [ticketId]);
         if (!rows[0]) return null;
@@ -570,6 +583,206 @@ export const MatchingRepo = {
             };
         },
 
+        /** Cancel even if already MATCHED; re-queue the partner if applicable.
+         * Idempotent and deadlock-safe (locks both tickets in sorted order).
+         */
+        async cancelWithPartnerRecovery(
+            ticketId: string,
+            opts?: { partnerExtendSeconds?: number }
+        ): Promise<{ cancelled: TicketDbRow | null; partnerRequeued: TicketDbRow | null }> {
+            const pool = await getConnectionPool();
+            const client = await pool.connect();
+            const extendSecs = Math.max(0, opts?.partnerExtendSeconds ?? 180);
+
+            const toTicket = (r: TicketSqlRow): TicketDbRow => ({
+                ticket_id: r.ticket_id,
+                user_id: r.user_id,
+                difficulty: r.difficulty as Difficulty,
+                topics: r.topics ?? [],
+                skill_level: r.skill_level as SkillLevel,
+                strict_mode: r.strict_mode,
+                status: r.status as TicketStatus,
+                enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+                last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+                timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+                pair_id: r.pair_id ?? null,
+            });
+
+            try {
+                await client.query("begin");
+
+                // 1) Lock the cancelling ticket first
+                const { rows: tRows } = await client.query<TicketSqlRow>(
+                `select * from tickets where ticket_id = $1 for update`,
+                [ticketId]
+                );
+                const t = tRows[0];
+                if (!t) {
+                await client.query("rollback");
+                return { cancelled: null, partnerRequeued: null };
+                }
+
+                // Already terminal → idempotent no-op
+                if (t.status === "CANCELLED" || t.status === "TIMEOUT" || t.status === "EXPIRED" || t.status === "DONE") {
+                await client.query("commit");
+                return { cancelled: null, partnerRequeued: null };
+                }
+
+                // 2) Simple pre-match cancel
+                if (t.status === "QUEUED") {
+                const { rows: cRows } = await client.query<TicketSqlRow>(
+                    `update tickets
+                    set status = 'CANCELLED'
+                    where ticket_id = $1 and status = 'QUEUED'
+                    returning *`,
+                    [ticketId]
+                );
+                const c = cRows[0] ?? null;
+                await client.query("commit");
+                return { cancelled: c ? toTicket(c) : null, partnerRequeued: null };
+                }
+
+                // 3) MATCHED: recover partner (deadlock-safe)
+                if (t.status === "MATCHED") {
+                const pairId = t.pair_id;
+
+                // If no pair_id, just cancel A
+                if (!pairId) {
+                    const { rows: cRows } = await client.query<TicketSqlRow>(
+                    `update tickets
+                        set status = 'CANCELLED', pair_id = null
+                    where ticket_id = $1
+                    returning *`,
+                    [ticketId]
+                    );
+                    const c = cRows[0] ?? null;
+                    await client.query("commit");
+                    return { cancelled: c ? toTicket(c) : null, partnerRequeued: null };
+                }
+
+                // Lock pair (harmless vs markMatched, which only locks tickets)
+                const { rows: pRows } = await client.query<PairSqlRow>(
+                    `select * from pairs where pair_id = $1 for update`,
+                    [pairId]
+                );
+                const p = pRows[0] ?? null;
+
+                // Determine partner id
+                const aId = t.ticket_id;
+                const bId = p ? (p.ticket_id_a === aId ? p.ticket_id_b : p.ticket_id_a) : null;
+
+                if (!bId) {
+                    const { rows: cRows } = await client.query<TicketSqlRow>(
+                    `update tickets
+                        set status = 'CANCELLED', pair_id = null
+                    where ticket_id = $1
+                    returning *`,
+                    [aId]
+                    );
+                    const c = cRows[0] ?? null;
+
+                    if (p) {
+                    await client.query(
+                        `update pairs
+                            set collaboration_id = null, session_id = null
+                        where pair_id = $1`,
+                        [pairId]
+                    );
+                    }
+
+                    await client.query("commit");
+                    return { cancelled: c ? toTicket(c) : null, partnerRequeued: null };
+                }
+
+                // **Deadlock-safe**: lock both tickets in sorted order
+                const [id1, id2] = [aId, bId].sort();
+                const { rows: tix } = await client.query<TicketSqlRow>(
+                    `select * from tickets
+                    where ticket_id in ($1, $2)
+                    order by ticket_id
+                    for update`,
+                    [id1, id2]
+                );
+                if (tix.length !== 2) {
+                    const { rows: cRows } = await client.query<TicketSqlRow>(
+                    `update tickets
+                        set status = 'CANCELLED', pair_id = null
+                    where ticket_id = $1
+                    returning *`,
+                    [aId]
+                    );
+                    const c = cRows[0] ?? null;
+
+                    await client.query(
+                    `update pairs
+                        set collaboration_id = null, session_id = null
+                        where pair_id = $1`,
+                    [pairId]
+                    );
+
+                    await client.query("commit");
+                    return { cancelled: c ? toTicket(c) : null, partnerRequeued: null };
+                }
+
+                const B = tix.find((r) => r.ticket_id === bId);
+                // Cancel A (the caller)
+                const { rows: cRows } = await client.query<TicketSqlRow>(
+                    `update tickets
+                    set status = 'CANCELLED', pair_id = null
+                    where ticket_id = $1
+                    returning *`,
+                    [aId]
+                );
+                const cancelled = cRows[0] ?? null;
+
+                // Re-queue B if still matched to this pair
+                let partnerRequeued: TicketDbRow | null = null;
+                if (B && B.status === "MATCHED" && B.pair_id === pairId) {
+                    const { rows: rq } = await client.query<TicketSqlRow>(
+                    `update tickets
+                        set status = 'QUEUED',
+                            pair_id = null,
+                            last_seen_at = now(),
+                            timeout_at = coalesce(timeout_at, now()) + make_interval(secs => $2)
+                    where ticket_id = $1
+                    returning *`,
+                    [bId, extendSecs]
+                    );
+                    if (rq[0]) partnerRequeued = toTicket(rq[0]);
+                }
+
+                // Neuter the pair
+                await client.query(
+                    `update pairs
+                        set collaboration_id = null, session_id = null
+                    where pair_id = $1`,
+                    [pairId]
+                );
+
+                await client.query("commit");
+                return { cancelled: cancelled ? toTicket(cancelled) : null, partnerRequeued };
+                }
+
+                // 4) Fallback: cancel other non-terminal states
+                const { rows: cRows } = await client.query<TicketSqlRow>(
+                `update tickets
+                    set status = 'CANCELLED', pair_id = null
+                where ticket_id = $1
+                returning *`,
+                [ticketId]
+                );
+                const c = cRows[0] ?? null;
+                await client.query("commit");
+                return { cancelled: c ? toTicket(c) : null, partnerRequeued: null };
+            } catch (e: unknown) {
+                await client.query("rollback");
+                throw e;
+            } finally {
+                client.release();
+            }
+        },
+
+
         /**
          * Cleanup lifecycle:
          * - If heartbeat is too old -> CANCELLED
@@ -585,6 +798,7 @@ export const MatchingRepo = {
                 `update tickets
                     set status = 'EXPIRED'
                  where status = 'QUEUED'
+                    and last_seen_at is not null
                     and now() - last_seen_at > make_interval(secs => $1)
                  returning *`,
                 [staleHeartbeatSeconds]
