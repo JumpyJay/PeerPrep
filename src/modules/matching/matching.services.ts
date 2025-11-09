@@ -168,12 +168,15 @@ async function pickQuestionForPair(args: {
 
   const difficulty =
     args.difficulty !== null
-      ? (args.difficulty.charAt(0) + args.difficulty.slice(1).toLowerCase())
+      ? (args.difficulty.charAt(0) + args.difficulty.slice(1).toLowerCase()) as "Easy" | "Medium" | "Hard"
       : undefined;
+
+  // Normalize tags to lowercase and replace spaces with hyphens to match DB format
+  const normalizedTags = tags.map((tag) => tag.toLowerCase().replace(/\s+/g, "-"));
 
   const params: QuestionSelectionParams = {
     difficulty,
-    tags: tags.length > 0 ? tags : undefined,
+    tags: normalizedTags.length > 0 ? normalizedTags : undefined,
     user: userIdentity,
   };
 

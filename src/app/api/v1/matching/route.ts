@@ -189,11 +189,15 @@ MatchingService.setCollaborationCreator(async ({ userA, userB, questionId }) => 
         ? Number(questionId)
         : null;
 
-  if (normalizedQuestionId === null || Number.isNaN(normalizedQuestionId)) {
-    throw new Error("questionId missing; cannot create collaboration session");
+  // Allow session creation without question (use default question ID = 1 as fallback)
+  const fallbackQuestionId = normalizedQuestionId ?? 1;
+
+  if (Number.isNaN(fallbackQuestionId)) {
+    throw new Error("Invalid questionId; cannot create collaboration session");
   }
 
-  const session = await sessionService.createSession(normalizedQuestionId, userA, userB);
+  // Convert number to string for session service
+  const session = await sessionService.createSession(String(fallbackQuestionId), userA, userB);
   return { session_id: String(session.session_id) };
 });
 

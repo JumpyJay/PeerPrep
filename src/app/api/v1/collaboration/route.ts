@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // handle errors
     console.error("API Error [POST]:", error);
 
