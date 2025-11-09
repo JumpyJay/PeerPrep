@@ -313,7 +313,7 @@ export const MatchingService = {
 
     const anchorUserId = getUserId(anchor);
 
-    // ⬇️ normalize difficulty into canonical "EASY" | "MEDIUM" | "HARD"
+    // normalize difficulty into canonical "EASY" | "MEDIUM" | "HARD"
     const rawDifficulty = isRecord(anchor) ? pickString(anchor, ["difficulty"]) : null;
     const difficulty: Difficulty | null = normalizeDifficulty(rawDifficulty);
 
@@ -321,9 +321,15 @@ export const MatchingService = {
       isRecord(anchor) && Array.isArray(anchor.topics) ? (anchor.topics as string[]) : [];
 
     // ---- STRICT MATCH PASS ------------------------------------------------
+    console.info("[match] try", { ticketId, mode: "strict" });
     {
       const partner = await MatchingRepo.findPartnerStrict(anchor);
       if (partner) {
+        console.info("[match] paired", {
+          mode: "strict",
+          anchor: anchor.ticket_id,
+          partner: partner.ticket_id,
+        })
         const partnerUserId = getUserId(partner);
         if (partnerUserId && partnerUserId === anchorUserId) {
           console.warn("[MatchingService] strict partner is same user, skipping");
@@ -350,9 +356,15 @@ export const MatchingService = {
     }
 
     // ---- FLEXIBLE MATCH PASS ----------------------------------------------
+    console.info("[match] try", { ticketId, mode: "flex" });
     {
       const partner = await MatchingRepo.findPartnerFlexible(anchor);
       if (partner) {
+        console.info("[match] paired", {
+          mode: "flex",
+          anchor: anchor.ticket_id,
+          partner: partner.ticket_id,
+        });
         const partnerUserId = getUserId(partner);
         if (partnerUserId && partnerUserId === anchorUserId) {
           console.warn("[MatchingService] flexible partner is same user, skipping");
