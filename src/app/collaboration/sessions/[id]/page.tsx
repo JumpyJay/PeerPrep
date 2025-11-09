@@ -74,7 +74,10 @@ export default function CollaborationPage() {
     const fetchQuestion = async () => {
       try {
         const questionResponse = await fetch(
-          `/api/v1/question/${session?.question_id}`
+          `/api/v1/question/${session?.question_id}`,
+          {
+            headers: { Authorization: "Bearer readerToken" },
+          }
         );
         // await JSON from question API
         const question = await questionResponse.json();
