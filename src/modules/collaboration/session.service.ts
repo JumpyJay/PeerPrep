@@ -25,7 +25,7 @@ export class SessionService {
 
   // function for creating a session
   public async createSession(
-    question_id: number,
+    question_id: string,
     user1_email: string,
     user2_email: string
   ): Promise<Session> {
@@ -33,7 +33,7 @@ export class SessionService {
     return this.repository.createSession(question_id, user1_email, user2_email);
   }
 
-  public async findSession(session_id: number): Promise<Session | null> {
+  public async findSession(session_id: number): Promise<Session> {
     console.log("CollabService: Finding a session.");
     return this.repository.findSessionById(session_id);
   }
