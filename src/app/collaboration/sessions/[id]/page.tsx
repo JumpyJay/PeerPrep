@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CodingInterface } from "../../components/codingInterface";
 import { useParams, useRouter } from "next/navigation";
 import { Session } from "@/modules/collaboration/session.types";
@@ -12,9 +12,19 @@ import { decodeJwtPayload } from "@/lib/decodeJWT";
 export default function CollaborationPage() {
   const params = useParams();
   const router = useRouter();
-  const sessionId = Number(params.id);
+  const sessionId = useMemo(() => {
+    const raw = Array.isArray(params.id) ? params.id[0] : params.id;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [params.id]);
   const [session, setSession] = useState<Session>();
   const [question, setQuestion] = useState<Question>();
+
+  useEffect(() => {
+    if (sessionId === null) {
+      router.push("/");
+    }
+  }, [sessionId, router]);
 
   useEffect(() => {
     // define async function to fetch and set session and question
@@ -42,7 +52,7 @@ export default function CollaborationPage() {
       }
     };
 
-    if (sessionId) {
+    if (sessionId !== null) {
       // Added a check to prevent running with NaN
       fetchSession();
     }
@@ -72,6 +82,9 @@ export default function CollaborationPage() {
     };
 
     const fetchQuestion = async () => {
+      if (!session?.question_id) {
+        return;
+      }
       try {
         const questionResponse = await fetch(
           `/api/v1/question/${session?.question_id}`
@@ -91,11 +104,11 @@ export default function CollaborationPage() {
       fetchQuestion();
     }
     // this effect depends on session state
-  }, [session]);
+  }, [session, router]);
 
   return (
     <div>
-      {question && session && (
+      {question && session && sessionId !== null && (
         <CodingInterface sessionId={sessionId} question={question} />
       )}
     </div>

@@ -33,7 +33,7 @@ export class SessionRepository {
 
   // define create session function
   public async createSession(
-    question_id: string,
+    question_id: number,
     user1_email: string,
     user2_email: string
   ): Promise<Session> {
@@ -58,7 +58,7 @@ export class SessionRepository {
   }
 
   // define fund session function
-  public async findSessionById(session_id: number): Promise<Session> {
+  public async findSessionById(session_id: number): Promise<Session | null> {
     if (!this.pool) {
       this.pool = await getConnectionPool();
     }
@@ -69,7 +69,7 @@ export class SessionRepository {
         [session_id]
       );
       // result.rows property contains the array of records from the database.
-      return result.rows[0];
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error("Error finding session in database:", error);
       throw new Error("Could not find session.");

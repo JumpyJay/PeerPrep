@@ -152,7 +152,7 @@ async function enrichWithSessionIfConfigured(pair: PairDbRow): Promise<PairDbRow
   }
 }
 
-async function fetchQuestionIdForPair(args: {
+async function pickQuestionForPair(args: {
   difficulty: Difficulty | null;
   topics: string[];
   users: string[];
@@ -308,7 +308,7 @@ export const MatchingService = {
           const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
           if (!pair) return null;
 
-          const qid = await fetchQuestionIdForPair({
+          const qid = await pickQuestionForPair({
             difficulty,
             topics,
             users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
@@ -336,7 +336,7 @@ export const MatchingService = {
           const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
           if (!pair) return null;
 
-          const qid = await fetchQuestionIdForPair({
+          const qid = await pickQuestionForPair({
             difficulty,
             topics,
             users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
@@ -427,12 +427,12 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
       const pair = await MatchingRepo.markMatched(row.ticket_id, partner.ticket_id);
       if (!pair) return null;
 
-      const allQs: Question[] = await safeGetAllQuestions();
-
-      // If your picker requires non-null Difficulty, default it here:
-      const effDifficulty: Difficulty = (difficulty ?? "EASY") as Difficulty;
-      const qid = pickQuestionForPair(allQs, effDifficulty, topics);
-      // If your picker accepts null, use: const qid = pickQuestionForPair(allQs, difficulty, topics);
+      const qid = await pickQuestionForPair({
+        difficulty,
+        topics,
+        users: [rowUserId ?? "", partnerUserId ?? ""].filter(Boolean),
+        fallbackKey: `${row.ticket_id}|${partner.ticket_id}`,
+      });
 
       const maybeSessioned = await enrichWithSessionIfConfigured({
         ...pair,

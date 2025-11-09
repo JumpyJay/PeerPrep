@@ -2,9 +2,10 @@
 
 import Cookies from "js-cookie";
 import { decodeJwtPayload } from "@/lib/decodeJWT";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { MatchmakingTab } from "@/components/matchMakingTab";
 import QuestionTab from "@/components/questionTab";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
   const [userEmail, setUserEmail] = useState<string>("");
@@ -22,6 +23,10 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"matchmaking" | "problems">(
     "matchmaking"
   );
+  const handleLogout = useCallback(() => {
+    Cookies.remove("token");
+    window.location.href = "/user";
+  }, []);
   const displayName = useMemo(() => {
     if (userEmail) {
       const [name] = userEmail.split("@");
@@ -42,21 +47,27 @@ export default function Home() {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-foreground">
-                {userEmail || "Not logged in"}
-              </p>
-              <p className="text-xs text-muted-foreground">Level 42</p>
-            </div>
-
-            {/* Clickable avatar */}
-            <div
-              onClick={() => router.push("/user/profile")}
-              className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 cursor-pointer hover:opacity-80 transition flex items-center justify-center text-white font-bold"
-              title="Go to your profile"
-            >
-              {userEmail ? userEmail.charAt(0).toUpperCase() : "?"}
-            </div>
+            {userEmail ? (
+              <>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-foreground">{displayName}</p>
+                  <p className="text-xs text-muted-foreground">{userEmail}</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => router.push("/user")}
+                className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       </header>

@@ -37,9 +37,10 @@ export async function POST(request: NextRequest) {
     // check for type
     // case when type is "create"
     if (type === "create") {
-      const { question_id, user1_email, user2_email } = body;
+      const questionId = Number(body?.question_id);
+      const { user1_email, user2_email } = body;
       // simple validation
-      if (!question_id || !user1_email || !user2_email) {
+      if (!Number.isFinite(questionId) || !user1_email || !user2_email) {
         return NextResponse.json(
           {
             error:
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
       }
 
       const newSession: Session = await sessionService.createSession(
-        question_id,
+        questionId,
         user1_email,
         user2_email
       );
@@ -58,9 +59,9 @@ export async function POST(request: NextRequest) {
       // return a 201 Created status, a successful POST
       return NextResponse.json(newSession, { status: 201 });
     } else if (type == "findsession") {
-      const { session_id } = body;
+      const sessionId = Number(body?.session_id);
       // simple validation if session_id is passed
-      if (!session_id) {
+      if (!Number.isFinite(sessionId)) {
         return NextResponse.json(
           {
             error: "Missing required fields: session_id",
@@ -68,9 +69,10 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      const foundSession: Session = await sessionService.findSession(
-        session_id
-      );
+      const foundSession = await sessionService.findSession(sessionId);
+      if (!foundSession) {
+        return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      }
 
       // return a 200 Found status, and the session info found
       return NextResponse.json(foundSession, { status: 200 });
