@@ -28,15 +28,22 @@ export async function getConnectionPool(): Promise<Pool> {
   });
 
   // create new connection pool
+  const maxConnections = Number(process.env.DB_POOL_MAX ?? 20);
+  const idleTimeoutMillis = Number(process.env.DB_IDLE_TIMEOUT_MS ?? 30_000);
+  const connectionTimeoutMillis = Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 5_000);
+
   const newPool = new pg.Pool({
     ...clientOpts,
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
-    // 5 should be enough
-    // currently can handle up to 100 sql request / s
-    // does not mean concurrent user == 5
-    max: 5,
+    max: maxConnections,
+    idleTimeoutMillis,
+    connectionTimeoutMillis,
+  });
+
+  newPool.on("error", (err) => {
+    console.error("Postgres pool error:", err);
   });
 
   // cache the new pool for future requests.

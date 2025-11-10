@@ -5,7 +5,7 @@ import QuestionList from "./components/questionList";
 import QuestionModal from "./components/questionModal";
 import type { Question } from "@/modules/question/question.types";
 
-export default function Home() {
+export default function QuestionPage() {
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(
     null
   );
