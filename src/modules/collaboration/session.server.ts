@@ -81,6 +81,40 @@ io.on("connection", (socket: Socket) => {
     checkRoomState(String(sessionId));
   });
 
+  // listen for code submission
+  socket.on("submit-code", async (sessionId: string, code: string) => {
+    // terminate session
+    io.to(sessionId).emit("complete-session");
+    // submit session
+    // i.e. create submission + mark session as completed
+    try {
+      // 2. Use the FULL, absolute URL
+      const res = await fetch(
+        `http://localhost:3000/api/v1/collaboration?type=submitsession`, // Use port 3000 (your Next.js app)
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ session_id: sessionId, code_solution: code }),
+        }
+      );
+
+      // log return result
+    } catch (error) {
+      console.error("Error submitting session:", error);
+    }
+    // log return result
+    console.log("submitting code from websocket server");
+
+    // clear timer
+    const existingTimer = roomTimers.get(sessionId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      roomTimers.delete(sessionId);
+    }
+  });
+
   // listen for code changes
   socket.on("send-code", (delta: CodeDelta) => {
     // find the room this socket is in but must not be socket id

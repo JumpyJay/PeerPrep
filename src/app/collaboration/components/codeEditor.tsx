@@ -108,11 +108,22 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       router.push("/");
     };
 
+    const onCompleteSession = () => {
+      console.log("[socket] Session terminated by server.");
+
+      // Show the toast
+      toast.success("Session Completed!!");
+
+      // Navigate to homepage
+      router.push("/");
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("receive-code", onReceiveCode);
     s.on("terminate-session", onTerminateSession);
     s.on("partner-disconnect", onPartnerDisconnect);
+    s.on("complete-session", onCompleteSession);
 
     return () => {
       s.off("connect", onConnect);
@@ -233,6 +244,14 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     if (!translation?.translatedCode) return;
     quillRef.current?.setText(translation.translatedCode);
   }
+
+  // define function for submit code
+  const handleSubmitCode = () => {
+    console.log("[socket] Submitting code.");
+    if (!socketRef.current || !connected) return;
+    const code = quillRef.current?.getText() ?? "";
+    socketRef.current.emit("submit-code", sessionId, code);
+  };
 
   return (
     <div className="flex w-1/2 flex-col">
@@ -405,7 +424,10 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+        <Button
+          className="bg-primary text-primary-foreground hover:bg-primary/90"
+          onClick={() => handleSubmitCode()}
+        >
           Submit
         </Button>
       </div>

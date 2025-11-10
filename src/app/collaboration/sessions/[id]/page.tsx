@@ -63,6 +63,9 @@ export default function CollaborationPage() {
         ) {
           router.push("/");
           toast.error("You are not authorized to access this page.");
+        } else if (session?.is_completed) {
+          router.push("/");
+          toast.error("Session has already been completed.");
         }
       } else {
         // Handle case where there is no token

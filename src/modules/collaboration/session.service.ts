@@ -44,9 +44,18 @@ export class SessionService {
     session_id: string,
     code_solution: string
   ): Promise<Session> {
-    console.log("UserService: Terminating a session.");
+    console.log("CollabService: Terminating a session.");
     this.repository.createSubmission(session_id, code_solution);
     return this.repository.finishSession(session_id);
+  }
+
+  // create function to submit session
+  // return value -> null ?
+  public async submitSession(session_id: string, code_solution: string) {
+    console.log("CollabService: Submitting a session.");
+    // call finish session function in repository
+    this.repository.finishSession(session_id);
+    this.repository.createSubmission(session_id, code_solution);
   }
 }
 

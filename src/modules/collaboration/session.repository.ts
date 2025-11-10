@@ -116,7 +116,7 @@ export class SessionRepository {
       const { question_id, user1_email, user2_email } = inforesult.rows[0];
 
       const result = await client.query(
-        "INSERT INTO submissions (question_id, user1_email, user2_email, code_solution, session_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        "INSERT INTO submissions (question_id, user1_email, user2_email, users_solution, session_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
         [question_id, user1_email, user2_email, code_solution, session_id]
       );
       // result.rows property contains the array of records from the database.

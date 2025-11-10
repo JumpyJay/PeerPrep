@@ -74,6 +74,25 @@ export async function POST(request: NextRequest) {
 
       // return a 200 Found status, and the session info found
       return NextResponse.json(foundSession, { status: 200 });
+    } else if (type == "submitsession") {
+      console.log("submitting session route hit!!!!!_________");
+      // retrieve session_id, code_solution
+      const { session_id, code_solution } = body;
+      // simple validaton, checking whether params passed are correct
+      if (!session_id || !code_solution) {
+        return NextResponse.json(
+          {
+            error: "Missing required fields: session_id, code_solution",
+          },
+          { status: 400 }
+        );
+      }
+      // happy path
+      // correct params passed
+      // call service submitSession function
+      sessionService.submitSession(session_id, code_solution);
+      // return a 200 success status
+      return NextResponse.json({ status: 200 });
     } else {
       // handle other types or missing type
       return NextResponse.json(
