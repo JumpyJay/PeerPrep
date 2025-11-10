@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { questionService } from "@/modules/question/question.service";
 import { Difficulty } from "@/modules/question/question.types";
-import { assertServiceAuthorized } from "@/lib/security/service-auth";
 
 export async function GET(req: Request) {
   try {
-    assertServiceAuthorized(req, "read");
     const { searchParams } = new URL(req.url);
     const difficultyParam = searchParams.get("difficulty") as Difficulty | null;
     const tagsParam = searchParams.get("tags"); // comma-separated
@@ -38,9 +36,6 @@ export async function GET(req: Request) {
     return NextResponse.json(question, { status: 200 });
   } catch (error) {
     console.error("API Error (select question):", error);
-    if (error instanceof Error && "status" in error) {
-      return NextResponse.json({ error: error.message }, { status: Number(error.status) });
-    }
     return NextResponse.json(
       { error: "Failed to select question." },
       { status: 500 }

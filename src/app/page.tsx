@@ -2,10 +2,10 @@
 
 import Cookies from "js-cookie";
 import { decodeJwtPayload } from "@/lib/decodeJWT";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { MatchmakingTab } from "@/components/matchMakingTab";
 import QuestionTab from "@/components/questionTab";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
   const [userEmail, setUserEmail] = useState<string>("");
@@ -13,19 +13,27 @@ export default function Home() {
 
   useEffect(() => {
     const myToken = Cookies.get("token");
-
-    if (myToken) {
-      const payload = decodeJwtPayload(myToken);
-      setUserEmail(payload.id);
-
-      console.log("email: " + payload.id);
-      console.log("expiration date: " + payload.exp);
+    if (!myToken) return;
+    const payload = decodeJwtPayload(myToken);
+    const email = typeof payload?.id === "string" ? payload.id : "";
+    if (email) {
+      setUserEmail(email);
     }
   }, []);
-
   const [activeTab, setActiveTab] = useState<"matchmaking" | "problems">(
     "matchmaking"
   );
+  const handleLogout = useCallback(() => {
+    Cookies.remove("token");
+    window.location.href = "/user";
+  }, []);
+  const displayName = useMemo(() => {
+    if (userEmail) {
+      const [name] = userEmail.split("@");
+      return name || userEmail;
+    }
+    return "Guest";
+  }, [userEmail]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -39,21 +47,27 @@ export default function Home() {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-foreground">
-                {userEmail || "Not logged in"}
-              </p>
-              <p className="text-xs text-muted-foreground">Level 42</p>
-            </div>
-
-            {/* Clickable avatar */}
-            <div
-              onClick={() => router.push("/user/profile")}
-              className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 cursor-pointer hover:opacity-80 transition flex items-center justify-center text-white font-bold"
-              title="Go to your profile"
-            >
-              {userEmail ? userEmail.charAt(0).toUpperCase() : "?"}
-            </div>
+            {userEmail ? (
+              <>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-foreground">{displayName}</p>
+                  <p className="text-xs text-muted-foreground">{userEmail}</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => router.push("/user")}
+                className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -86,7 +100,7 @@ export default function Home() {
 
       {/* Tab Content */}
       <div className="mx-auto max-w-7xl px-6 py-8">
-        {activeTab === "matchmaking" && <MatchmakingTab />}
+        {activeTab === "matchmaking" && <MatchmakingTab userId={userEmail} />}
         {activeTab === "problems" && <QuestionTab />}
       </div>
     </div>

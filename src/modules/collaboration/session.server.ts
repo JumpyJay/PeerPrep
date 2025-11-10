@@ -2,7 +2,7 @@ import { Server, Socket } from "socket.io";
 
 // define a type for the payload from Quill
 interface CodeDelta {
-  ops: any[];
+  ops: unknown[];
 }
 
 const io = new Server(3001, {

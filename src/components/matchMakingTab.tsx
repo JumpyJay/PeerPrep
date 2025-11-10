@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const partnersAvailable = [
   {
@@ -64,10 +65,39 @@ const recentMatches = [
   },
 ];
 
-export function MatchmakingTab() {
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(
-    null
-  );
+type QueueStatus = "idle" | "queueing" | "searching" | "matched" | "error";
+
+interface MatchmakingTabProps {
+  userId?: string;
+}
+
+const difficultyOptions = ["Easy", "Medium", "Hard"];
+const skillOptions = [
+  { value: "BEGINNER", label: "Beginner" },
+  { value: "INTERMEDIATE", label: "Intermediate" },
+  { value: "ADVANCED", label: "Advanced" },
+];
+
+export function MatchmakingTab({ userId }: MatchmakingTabProps) {
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>("Medium");
+  const [skillLevel, setSkillLevel] = useState<string>("INTERMEDIATE");
+  const [topicsInput, setTopicsInput] = useState<string>("Arrays, Hash Table");
+  const [strictMode, setStrictMode] = useState(false);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus>("idle");
+  const [statusMessage, setStatusMessage] = useState<string>("");
+  const [matchError, setMatchError] = useState<string | null>(null);
+  const [ticketId, setTicketId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [existingTicket, setExistingTicket] = useState(false);
+  const [userIdentifier, setUserIdentifier] = useState(userId ?? "");
+
+  const router = useRouter();
+
+  useEffect(() => {
+    if (userId && !userIdentifier) {
+      setUserIdentifier(userId);
+    }
+  }, [userId, userIdentifier]);
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
@@ -82,6 +112,154 @@ export function MatchmakingTab() {
     }
   };
 
+  const effectiveUserId = useMemo(() => {
+    return userIdentifier.trim();
+  }, [userIdentifier]);
+
+  const parseTopics = (): string[] => {
+    const topics = topicsInput
+      .split(",")
+      .map((topic) => topic.trim())
+      .filter(Boolean);
+    return topics.length > 0 ? topics : ["General"];
+  };
+
+  const handleFindPartner = async () => {
+    if (!effectiveUserId) {
+      setMatchError("Please provide your user email or ID.");
+      return;
+    }
+    setQueueStatus("queueing");
+    setStatusMessage("Creating match ticket...");
+    setMatchError(null);
+    setSessionId(null);
+    setExistingTicket(false);
+
+    const payload = {
+      userId: effectiveUserId,
+      difficulty: selectedDifficulty.toUpperCase(),
+      topics: parseTopics(),
+      skillLevel,
+      strictMode,
+    };
+
+    try {
+      const response = await fetch("/api/v1/matching", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Failed to enqueue ticket.");
+      }
+
+      setTicketId(body.ticket_id);
+      setExistingTicket(Boolean(body.existing));
+      setQueueStatus("searching");
+      setStatusMessage(
+        body.existing
+          ? "Resumed your previous queue. Looking for a partner..."
+          : "Ticket created. Searching for a suitable partner..."
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not start matching.";
+      setMatchError(message);
+      setQueueStatus("error");
+    }
+  };
+
+  const handleCancelQueue = async () => {
+    if (!ticketId) return;
+    setStatusMessage("Cancelling ticket...");
+    try {
+      const response = await fetch(`/api/v1/matching/tickets/${ticketId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Unable to cancel ticket.");
+      }
+      setQueueStatus("idle");
+      setTicketId(null);
+      setStatusMessage("Ticket cancelled.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Cancel failed.";
+      setMatchError(message);
+    }
+  };
+
+  const pollTicket = useCallback(
+    async (id: string) => {
+      try {
+        const response = await fetch(`/api/v1/matching/tickets/${id}`, { cache: "no-store" });
+        if (!response.ok) {
+          if (response.status === 404) {
+            setQueueStatus("error");
+            setStatusMessage("Ticket expired or not found.");
+            setTicketId(null);
+            return;
+          }
+          throw new Error("Polling failed");
+        }
+        const data = await response.json();
+        switch (data.status) {
+          case "matched":
+            if (data.session_id) {
+              setQueueStatus("matched");
+              setStatusMessage("Partner found! Redirecting to session...");
+              setSessionId(data.session_id);
+              setTimeout(() => {
+                router.push(`/collaboration/sessions/${data.session_id}`);
+              }, 1200);
+            }
+            break;
+          case "matched_pending_session":
+            setStatusMessage("Partner locked in, waiting for session...");
+            break;
+          case "searching":
+            setQueueStatus("searching");
+            setStatusMessage("Still searching...");
+            break;
+          case "cancelled":
+          case "timeout":
+          case "expired":
+            setQueueStatus("error");
+            setStatusMessage(`Ticket ${data.status}. Please try again.`);
+            setTicketId(null);
+            break;
+          default:
+            break;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Poll failed.";
+        setMatchError(message);
+        setQueueStatus("error");
+      }
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    if (!ticketId || queueStatus !== "searching") {
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      pollTicket(ticketId);
+    };
+    const interval = window.setInterval(tick, 4000);
+    tick();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [ticketId, queueStatus, pollTicket]);
+
+  const queueDisabled = queueStatus === "queueing" || queueStatus === "searching";
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Main Content */}
@@ -92,17 +270,38 @@ export function MatchmakingTab() {
             Quick Match
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Select difficulty and find a partner instantly
+            Select your preferences and let us pair you up. Question selection and session creation happen automatically once a partner is ready.
           </p>
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">
+                Your email / user ID
+              </label>
+              <input
+                type="text"
+                value={userIdentifier}
+                onChange={(event) => setUserIdentifier(event.target.value)}
+                placeholder="you@example.com"
+                className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">
+                Topics (comma separated)
+              </label>
+              <input
+                type="text"
+                value={topicsInput}
+                onChange={(event) => setTopicsInput(event.target.value)}
+                className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+              />
+            </div>
+          </div>
           <div className="flex gap-3 flex-wrap mb-6">
-            {["Easy", "Medium", "Hard"].map((diff) => (
+            {difficultyOptions.map((diff) => (
               <button
                 key={diff}
-                onClick={() =>
-                  setSelectedDifficulty(
-                    selectedDifficulty === diff ? null : diff
-                  )
-                }
+                onClick={() => setSelectedDifficulty(diff)}
                 className={`px-4 py-2 rounded border transition-all ${
                   selectedDifficulty === diff
                     ? `${getDifficultyColor(diff)} border-current`
@@ -113,9 +312,66 @@ export function MatchmakingTab() {
               </button>
             ))}
           </div>
-          <button className="w-full bg-primary text-primary-foreground font-medium py-3 rounded hover:opacity-90 transition-opacity">
-            Find Partner Now
-          </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">
+                Skill level
+              </label>
+              <select
+                value={skillLevel}
+                onChange={(event) => setSkillLevel(event.target.value)}
+                className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+              >
+                {skillOptions.map((option) => (
+                  <option value={option.value} key={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-foreground mt-6 md:mt-0">
+              <input
+                type="checkbox"
+                checked={strictMode}
+                onChange={(event) => setStrictMode(event.target.checked)}
+                className="h-4 w-4 rounded border border-border"
+              />
+              Strict mode (exact difficulty & topic match)
+            </label>
+          </div>
+          <div className="space-y-2">
+            <button
+              disabled={queueDisabled}
+              onClick={handleFindPartner}
+              className="w-full bg-primary text-primary-foreground font-medium py-3 rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {queueStatus === "searching" ? "Searching..." : "Find Partner Now"}
+            </button>
+            {ticketId && (
+              <button
+                onClick={handleCancelQueue}
+                className="w-full border border-border text-sm text-muted-foreground py-2 rounded hover:bg-secondary/40"
+              >
+                Cancel Search
+              </button>
+            )}
+          </div>
+          {statusMessage && (
+            <p className="mt-4 text-sm text-muted-foreground">{statusMessage}</p>
+          )}
+          {matchError && (
+            <p className="mt-2 text-sm text-destructive">{matchError}</p>
+          )}
+          {sessionId && (
+            <p className="mt-2 text-sm text-foreground">
+              Session ready: {sessionId}
+            </p>
+          )}
+          {existingTicket && queueStatus === "searching" && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              You already had an active ticket; we resumed it.
+            </p>
+          )}
         </div>
 
         {/* Available Partners */}
