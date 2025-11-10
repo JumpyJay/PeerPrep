@@ -1,29 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RankingService } from "@/modules/ranking/ranking.service";
 
-
-interface GetParams {
-  params: Promise<{ username: string }>;
+// Define the shape of the 'params' object *after* it's awaited
+interface RouteParams {
+  username: string;
 }
 
-// 1. Use NextRequest
-export async function GET(request: NextRequest, { params }: GetParams) {
-  try {
-    // 2. Await the params promise to get the actual object
-    const resolvedParams = await params;
-    
-    // 3. Destructure the username from the resolved object
-    const { username } = resolvedParams;
+// The 'context' object contains a 'params' property which is a Promise
+interface RouteContext {
+  params: Promise<RouteParams>;
+}
 
-    // 4. Call service (which calls the repository)
+export async function GET(request: NextRequest, context: RouteContext) {
+  try {
+    // 1. Get the username from the URL
+    //    You MUST await 'context.params' to get the object
+    const { username } = await context.params;
+
+    // 2. Call your service (which calls the repository)
     const userRank = await RankingService.getUserRank(username);
 
-    // 5. Handle "User not found"
+    // 3. Handle "User not found"
     if (!userRank) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // 6. Send the data back
+    // 4. Send the data back
     return NextResponse.json(userRank);
 
   } catch (error) {
