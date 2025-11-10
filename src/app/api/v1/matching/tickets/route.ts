@@ -4,6 +4,8 @@ import { MatchingService } from "@/modules/matching/matching.services";
 import { normalizeDifficulty, type Difficulty } from "@/modules/matching/matching.utils";
 import type { SkillLevel } from "@/modules/matching/matching.types";
 
+export const runtime = "nodejs";
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
 

@@ -31,6 +31,8 @@ import { mapTicket, mapMatchResult } from "./matching.types";
 import { questionService } from "../question/question.service";
 import type { QuestionSelectionParams } from "../question/question.types";
 import { normalizeDifficulty, type Difficulty } from "./matching.utils";
+import { getProfileByEmail } from "../user/user.client";
+import { SkillLevel } from "./matching.types";
 
 /** Centralized knobs (document these in your design doc) */
 const CONFIG = {
@@ -50,7 +52,6 @@ const CONFIG = {
   partnerRecoveryExtendSeconds: 180,
 };
 
-type EnqueueResult = { ticket: Ticket; existing: boolean};
   
 /**
  * Optional dependency: a function that creates collaboration sessions.
@@ -215,20 +216,44 @@ export const MatchingService = {
     return ticket;
   },
   
-  
-  async enqueueWithExisting(req: EnqueueRequest): Promise<EnqueueResult> {
+  async enqueueWithExisting(req: EnqueueRequest): Promise<{ ticket: Ticket; existing: boolean }> {
     const existing = await MatchingRepo.findActiveTicketByUser(req.userId);
     if (existing) return { ticket: mapTicket(existing), existing: true };
 
+    // 1) Pull user profile (visible proof in terminal)
+    try {
+      const profile = await getProfileByEmail(String(req.userId));
+      console.log("[MatchingService] fetched user profile:", profile);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn("[MatchingService] user fetch failed:", message);
+      console.warn("[MatchingService] proceeding with request payload only");
+    }
+
+    // 2) Resolve effective fields (keep it simple)
+    const effectiveDifficulty = normalizeDifficulty(req.difficulty ?? "EASY") ?? "EASY";
+    const effectiveTopics = Array.isArray(req.topics) ? req.topics : [];
+    const effectiveSkill = (req.skillLevel ?? "BEGINNER") as SkillLevel;
     const timeoutSeconds = req.timeoutSeconds ?? CONFIG.defaultTicketTimeoutSeconds;
-    const row: TicketDbRow = await MatchingRepo.createTicket({ 
+
+    console.log("[MatchingService] enqueue resolved:", {
       userId: req.userId,
-      difficulty: req.difficulty,
-      topics: req.topics,
-      skillLevel: req.skillLevel,
+      difficulty: effectiveDifficulty,
+      topics: effectiveTopics,
+      skillLevel: effectiveSkill,
+      strictMode: !!req.strictMode,
+      timeoutSeconds,
+    });
+
+    const row = await MatchingRepo.createTicket({
+      userId: req.userId,
+      difficulty: effectiveDifficulty,
+      topics: effectiveTopics,
+      skillLevel: effectiveSkill,
       strictMode: req.strictMode,
       timeoutSeconds,
-     });
+    });
+
     return { ticket: mapTicket(row), existing: false };
   },
 
