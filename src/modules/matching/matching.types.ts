@@ -1,4 +1,4 @@
-// /src/mpdules/macthing/matching.types.ts
+// /src/modules/macthing/matching.types.ts
 
 // --------------------------
 // Matching Type Definitions

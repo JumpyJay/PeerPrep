@@ -44,6 +44,14 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
+
+function pickFirstString(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === "string" && val.trim().length > 0) return val;
+  }
+  return null;
+}
 /** --------------------------------------------------------------
  * Legacy -> Canonical adapters (API boundary only)
  * --------------------------------------------------------------
@@ -245,10 +253,62 @@ export async function POST(req: NextRequest) {
 
     // 3) Normalize legacy → canonical
     const adapted = normalizeEnqueue(raw);
-    console.log("[matching] normalized payload:", adapted);
+
+    // after: const adapted = normalizeEnqueue(raw);
+    let adaptedForZod: unknown = adapted;
+
+    try {
+      if (isRecord(adapted)) {
+        const userIdRaw = adapted["userId"];
+        const hasUserId = typeof userIdRaw === "string" && userIdRaw.trim().length > 0;
+
+        if (!hasUserId) {
+          // pull an email-like field from the body
+          const emailFromBody = pickFirstString(adapted, ["email", "user", "user_email"]);
+          if (!emailFromBody) {
+            return withCors(
+              NextResponse.json(
+                { error: "Unauthorized: missing user identity (email)" },
+                { status: 401, headers: JSON_HEADERS }
+              )
+            );
+          }
+
+          // Fetch profile; tolerate 404 by mapping to null
+          const { getProfileByEmail } = await import("@/modules/user/user.client");
+          let profile: unknown = null;
+          try {
+            profile = await getProfileByEmail(emailFromBody);
+          } catch {
+            profile = null;
+          }
+
+          // Narrow: require a non-empty string email
+          if (!isRecord(profile) || typeof profile.email !== "string" || profile.email.trim().length === 0) {
+            return withCors(
+              NextResponse.json(
+                { error: "Unauthorized: user not found" },
+                { status: 401, headers: JSON_HEADERS }
+              )
+            );
+          }
+
+          adaptedForZod = { ...adapted, userId: profile.email };
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[matching] identity resolution failed:", msg);
+      return withCors(
+        NextResponse.json({ error: "Unable to resolve user" }, { status: 401, headers: JSON_HEADERS })
+      );
+    }
+
+    
+    console.log("[matching] normalized payload:", );
 
     // 4) Use safeParse to *return* the issues instead of throwing
-    const parsed = EnqueueSchema.safeParse(adapted);
+    const parsed = EnqueueSchema.safeParse(adaptedForZod);
     if (!parsed.success) {
       const issues = parsed.error.issues.map(i => ({
         path: i.path.join("."),
