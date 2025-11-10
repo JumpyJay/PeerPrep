@@ -5,16 +5,14 @@ import { Button } from "@/components/ui/button";
 import { io } from "socket.io-client";
 import "quill/dist/quill.snow.css";
 import type QuillType from "quill";
-import type { DeltaStatic, Sources } from "quill";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface CodeEditorProps {
   sessionId: number;
 }
 
-type TranslationStyle = "literal" | "idiomatic";
-
 interface TranslationResult {
   translatedCode: string;
   provider: string;
@@ -30,8 +28,6 @@ interface TranslationResult {
   provider: string;
   cached: boolean;
 }
-
-const defaultCode = ``;
 
 const languageOptions = [
   { value: "typescript", label: "TypeScript" },
@@ -75,41 +71,22 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
   }, [targetLanguage]);
 
   useEffect(() => {
-    const socket = io("http://localhost:3001");
-    socketRef.current = socket;
+    const s = io("http://localhost:3001");
+    socketRef.current = s;
 
     const onConnect = () => {
       setConnected(true);
-      socket.emit("join-session", sessionId);
+      s.emit("join-session", sessionId);
     };
 
     const onDisconnect = () => {
       setConnected(false);
     };
 
-    const onReceiveCode = (payload: DeltaStatic) => {
+    const onReceiveCode = (payload: any) => {
       const q = quillRef.current;
       if (!q) return;
       q.updateContents(payload, "api");
-    };
-
-    const onPartnerDisconnect = () => {
-      // Show the toast
-      toast.warning(
-        "Partner disconnected, session will be terminated in 10 seconds."
-      );
-    };
-
-    const onTerminateSession = () => {
-      console.log("[socket] Session terminated by server.");
-
-      // Show the toast
-      toast.error(
-        "Session Terminated, You were the only one in the room for 10 seconds."
-      );
-
-      // Navigate to homepage
-      router.push("/");
     };
 
     const onPartnerDisconnect = () => {
@@ -169,11 +146,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
         quill.root.classList.add("font-mono");
         quill.setText(defaultCode);
 
-        const onTextChange = (
-          delta: DeltaStatic,
-          _old: DeltaStatic,
-          source: Sources
-        ) => {
+        const onTextChange = (delta: any, _old: any, source: string) => {
           if (source !== "user") return;
           if (!socketRef.current || !connected) return;
           const payload = { ops: delta.ops };
