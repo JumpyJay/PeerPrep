@@ -49,8 +49,15 @@ export class SessionService {
     return this.repository.finishSession(session_id);
   }
 
+  // define fetch submission function
+  public async findSubmission(user_email: string) {
+    console.log("CollabService: Fetching a submission.");
+    // call repository function
+    return this.repository.findSubmissionByUser(user_email);
+  }
+
   // create function to submit session
-  // return value -> null ?
+  // return value -> null
   public async submitSession(session_id: string, code_solution: string) {
     console.log("CollabService: Submitting a session.");
     // call finish session function in repository
