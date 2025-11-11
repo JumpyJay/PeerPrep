@@ -129,6 +129,29 @@ export class SessionRepository {
       client.release();
     }
   }
+  
+  
+  // This function is for the "Refresh Button" logic.
+  // It only reads from the 'submissions' table and does not
+  // affect any other part of this file.
+  public async findAllSubmissions(): Promise<{ question_id: number, user1_email: string, user2_email: string }[]> {
+    if (!this.pool) {
+      this.pool = await getConnectionPool();
+    }
+    const client = await this.pool.connect();
+    try {
+      // Fetches the key info from every submission
+      const result = await client.query(
+        "SELECT question_id, user1_email, user2_email FROM submissions"
+      );
+      return result.rows;
+    } catch (error) {
+      console.error("Error fetching all submissions:", error);
+      throw new Error("Could not retrieve submissions.");
+    } finally {
+      client.release();
+    }
+  }
 }
 
 // export a singleton instance of the repository
