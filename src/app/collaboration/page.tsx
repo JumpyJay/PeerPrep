@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Toggle } from "@/components/ui/toggle";
+import getInitialsFromEmail from "@/lib/getInitials";
 import { Session } from "@/modules/collaboration/session.types";
 import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -30,12 +31,6 @@ export default function CollaborationPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-
-  const getInitialsFromEmail = (email: string) => {
-    if (!email) return "?";
-    const username = email.split("@")[0];
-    return username.substring(0, 2).toUpperCase();
-  };
 
   const handleSubmission = () => {
     console.log("questionID: ", questionID);

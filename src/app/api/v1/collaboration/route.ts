@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      const foundSubmission: Submission = await sessionService.findSubmission(
+      const foundSubmission: Submission[] = await sessionService.findSubmission(
         user_email
       );
 

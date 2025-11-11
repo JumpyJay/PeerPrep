@@ -111,11 +111,11 @@ export class SessionRepository {
     try {
       // retrieve submission
       const submissionres = await client.query(
-        "SELECT FROM submissions WHERE user1_email = $1 OR user2_email = $1",
+        "SELECT * FROM submissions WHERE user1_email = $1 OR user2_email = $1",
         [user_email]
       );
       // result.rows property contains the array of records from the database.
-      return submissionres.rows[0];
+      return submissionres.rows || [];
     } catch (error) {
       console.log("error during fetch submissions: ", error);
       throw new Error("Could not fetch submissions.");
