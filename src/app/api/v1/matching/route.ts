@@ -9,6 +9,7 @@ import {
 } from "@/modules/matching/matching.schema";
 import { MatchingService } from "@/modules/matching/matching.services";
 import { MatchingRepo } from "@/modules/matching/matching.repository";
+import { sessionService } from "@/modules/collaboration/session.service";
 
 export const runtime = "nodejs";
 
@@ -180,32 +181,25 @@ function normalizeRelax(raw: unknown) {
   };
 }
 
-// DI: tell MatchingService how to create a collaboration session
-// Temporary stub so session_id exists immediately
-MatchingService.setCollaborationCreator(async () => {
-  const id =
-    globalThis.crypto?.randomUUID?.() ??
-    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return { session_id: id };
-});
+MatchingService.setCollaborationCreator(async ({ userA, userB, questionId }) => {
+  const normalizedQuestionId =
+    typeof questionId === "number"
+      ? questionId
+      : typeof questionId === "string" && questionId.trim().length > 0
+        ? Number(questionId)
+        : null;
 
-/*
- // Call collaboration API when POST is added
- MatchingService.setCollaborationCreator(async ({ userA, userB, questionId }) => {
-   const res = await fetch(`${process.env.COLLAB_BASE_URL ?? ""}/api/v1/collaboration`, {
-     method: "POST",
-     headers: { "Content-Type": "application/json" },
-     body: JSON.stringify({ userA, userB, questionId }),
-     cache: "no-store",
-   });
-   if (!res.ok) {
-     const msg = await res.text().catch(() => "");
-     throw new Error(`Collab create failed: ${res.status} ${msg}`);
-   }
-   const { session_id } = await res.json();
-   return { session_id };
- });
-*/
+  // Allow session creation without question (use default question ID = 1 as fallback)
+  const fallbackQuestionId = normalizedQuestionId ?? 1;
+
+  if (Number.isNaN(fallbackQuestionId)) {
+    throw new Error("Invalid questionId; cannot create collaboration session");
+  }
+
+  // Convert number to string for session service
+  const session = await sessionService.createSession(String(fallbackQuestionId), userA, userB);
+  return { session_id: String(session.session_id) };
+});
 
 /** --------------------------------------------------------------
  * ROUTES

@@ -469,6 +469,8 @@ export const MatchingRepo = {
                 pair_id: pair.pair_id,
                 ticket_id_a: pair.ticket_id_a,
                 ticket_id_b: pair.ticket_id_b,
+                user_id_a: a.user_id,
+                user_id_b: b.user_id,
                 matched_at: toTimestamp(new Date(pair.matched_at)),
                 strict_mode: pair.strict_mode,
                 question_id: pair.question_id ?? null,

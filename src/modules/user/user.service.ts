@@ -68,16 +68,18 @@ export async function login(data: UserCredentials) {
  */
 export async function getProfile(email: string) {
   try {
-    // checks for existing user in db using id checks
     const user = await userRepository.findUserByEmail(email);
 
-    if (!user) {
-      return { success: false, status: 404, message: "User not found" };
+    if (!user) { // user not found
+      return null;
     }
 
-    return { success: true, status: 200, message: "User profile retrieved", user };
+    return {
+      username: user.username,
+      email: user.email,
+      created_at: user.created_at,
+    };
   } catch (err: unknown) {
-    console.error("Caught error:", err);
-    return { success: false, status: 500, message: "Internal Server Error" };
+    throw new Error("Internal Server Error");
   }
 }
