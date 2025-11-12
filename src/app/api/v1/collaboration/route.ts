@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sessionService } from "@/modules/collaboration/session.service";
-import { Session } from "@/modules/collaboration/session.types";
+import { Session, Submission } from "@/modules/collaboration/session.types";
 
 /**
  * handles GET requests to /api/v1/collaboration
@@ -87,17 +87,36 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
       // happy path
       // correct params passed
       // call service submitSession function
       sessionService.submitSession(session_id, code_solution);
       // return a 200 success status
       return NextResponse.json({ status: 200 });
+    } else if (type == "findsubmission") {
+      // define find submission api route
+      const { user_email } = body;
+      // simple validation if user_email is passed
+      if (!user_email) {
+        return NextResponse.json(
+          {
+            error: "Missing required fields: user_email",
+          },
+          { status: 400 }
+        );
+      }
+      const foundSubmission: Submission[] = await sessionService.findSubmission(
+        user_email
+      );
+
+      // return a 200 Found status, and the session info found
+      return NextResponse.json(foundSubmission, { status: 200 });
     } else {
       // handle other types or missing type
       return NextResponse.json(
         {
-          error: `Invalid or missing query parameter: 'type=create' is required.`,
+          error: `Invalid or missing query parameter: 'type' parameter is required.`,
         },
         { status: 400 }
       );

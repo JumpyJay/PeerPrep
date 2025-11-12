@@ -14,10 +14,20 @@ const io = new Server(3001, {
 
 // map to store all active termination timers
 const roomTimers = new Map<string, NodeJS.Timeout>();
+const completedSessions = new Set<string>();
 const SESSION_TIMEOUT_MS = 10000;
 
 // define function to check room state
 function checkRoomState(sessionId: string) {
+  if (completedSessions.has(sessionId)) {
+    // if the room is now empty, clean up the Set
+    const room = io.sockets.adapter.rooms.get(sessionId);
+    const roomSize = room ? room.size : 0;
+    if (roomSize === 0) {
+      completedSessions.delete(sessionId);
+    }
+    return;
+  }
   const room = io.sockets.adapter.rooms.get(sessionId);
   const roomSize = room ? room.size : 0;
 
@@ -83,8 +93,19 @@ io.on("connection", (socket: Socket) => {
 
   // listen for code submission
   socket.on("submit-code", async (sessionId: string, code: string) => {
-    // terminate session
+    // mark session as completed
+    // to prevent race condition
+    completedSessions.add(sessionId);
+    // clear timer
+    const existingTimer = roomTimers.get(sessionId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      roomTimers.delete(sessionId);
+    }
+
+    // complete session
     io.to(sessionId).emit("complete-session");
+
     // submit session
     // i.e. create submission + mark session as completed
     try {
@@ -106,13 +127,6 @@ io.on("connection", (socket: Socket) => {
     }
     // log return result
     console.log("submitting code from websocket server");
-
-    // clear timer
-    const existingTimer = roomTimers.get(sessionId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-      roomTimers.delete(sessionId);
-    }
   });
 
   // listen for code changes
@@ -129,9 +143,7 @@ io.on("connection", (socket: Socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log(`[socket] disconnected: ${socket.id}`);
-
-    if (currentSessionId) {
+    if (currentSessionId && !completedSessions.has(currentSessionId)) {
       // send partner disconnect
       io.to(currentSessionId).emit("partner-disconnect");
       // check room state after user disconnect
