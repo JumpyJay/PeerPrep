@@ -65,7 +65,11 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
   }, [targetLanguage]);
 
   useEffect(() => {
-    const s = io("http://localhost:3001");
+    console.log(
+      "websocket url: ",
+      process.env.NEXT_PUBLIC_WEBSOCKET_SERVER_URL
+    );
+    const s = io(process.env.NEXT_PUBLIC_WEBSOCKET_SERVER_URL);
     socketRef.current = s;
 
     const onConnect = () => {
@@ -341,73 +345,82 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       <div className="flex-1 min-h-0 overflow-auto bg-code-bg">
         <div className="flex h-full font-mono text-sm">
           <div className="flex-1 p-0">
-            <div ref={wrapperRef} className="quill-textarea h-full w-full min-h-0" />
+            <div
+              ref={wrapperRef}
+              className="quill-textarea h-full w-full min-h-0"
+            />
           </div>
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-10 border-t border-border
+      <div
+        className="sticky bottom-0 z-10 border-t border-border
                 bg-background/95 backdrop-blur
                 supports-[backdrop-filter]:bg-background/60
-                px-6 py-4">
-  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-    {/* Left: translation controls */}
-    <div className="flex flex-wrap items-end gap-4">
-      <div className="flex flex-col gap-1 text-sm min-w-[180px]">
-        <span className="text-xs text-muted-foreground">Translate to</span>
-        <select
-          value={targetLanguage}
-          onChange={(e) => setTargetLanguage(e.target.value)}
-          className="rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none hover:bg-secondary/80"
-        >
-          {languageOptions.map((option) => (
-            <option
-              key={option.value}
-              value={option.value}
-              disabled={option.value === language}
+                px-6 py-4"
+      >
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          {/* Left: translation controls */}
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex flex-col gap-1 text-sm min-w-[180px]">
+              <span className="text-xs text-muted-foreground">
+                Translate to
+              </span>
+              <select
+                value={targetLanguage}
+                onChange={(e) => setTargetLanguage(e.target.value)}
+                className="rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none hover:bg-secondary/80"
+              >
+                {languageOptions.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.value === language}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm min-w-[160px]">
+              <span className="text-xs text-muted-foreground">Style</span>
+              <select
+                value={translationStyle}
+                onChange={(e) =>
+                  setTranslationStyle(e.target.value as TranslationStyle)
+                }
+                className="rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none hover:bg-secondary/80"
+              >
+                <option value="idiomatic">Idiomatic</option>
+                <option value="literal">Literal</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Right: action buttons */}
+          <div className="flex flex-row flex-nowrap items-center justify-end gap-4 md:ml-auto">
+            <Button
+              onClick={handleTranslate}
+              disabled={isTranslating}
+              className="h-10 px-5 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {option.label}
-            </option>
-          ))}
-        </select>
+              {isTranslating ? "Translating..." : "Translate Code"}
+            </Button>
+
+            <Button
+              onClick={handleSubmitCode}
+              className="h-10 px-5 shrink-0 bg-green-600 text-white hover:bg-green-700"
+            >
+              Submit
+            </Button>
+          </div>
+        </div>
+
+        {translationError && (
+          <p className="mt-3 text-sm text-destructive">{translationError}</p>
+        )}
       </div>
-
-      <div className="flex flex-col gap-1 text-sm min-w-[160px]">
-        <span className="text-xs text-muted-foreground">Style</span>
-        <select
-          value={translationStyle}
-          onChange={(e) => setTranslationStyle(e.target.value as TranslationStyle)}
-          className="rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none hover:bg-secondary/80"
-        >
-          <option value="idiomatic">Idiomatic</option>
-          <option value="literal">Literal</option>
-        </select>
-      </div>
-    </div>
-
-    {/* Right: action buttons */}
-    <div className="flex flex-row flex-nowrap items-center justify-end gap-4 md:ml-auto">
-  <Button
-    onClick={handleTranslate}
-    disabled={isTranslating}
-    className="h-10 px-5 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
-  >
-    {isTranslating ? "Translating..." : "Translate Code"}
-  </Button>
-
-  <Button
-    onClick={handleSubmitCode}
-    className="h-10 px-5 shrink-0 bg-green-600 text-white hover:bg-green-700"
-  >
-    Submit
-  </Button>
-</div>
-  </div>
-
-  {translationError && (
-    <p className="mt-3 text-sm text-destructive">{translationError}</p>
-  )}
-</div>
 
       {translation && (
         <div className="border-t border-border bg-muted/20 px-4 py-3">
