@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import RecentSubmissionsTab from "./recentSubmissionsTab";
 
 const partnersAvailable = [
   {
@@ -79,7 +80,8 @@ const skillOptions = [
 ];
 
 export function MatchmakingTab({ userId }: MatchmakingTabProps) {
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string>("Medium");
+  const [selectedDifficulty, setSelectedDifficulty] =
+    useState<string>("Medium");
   const [skillLevel, setSkillLevel] = useState<string>("INTERMEDIATE");
   const [topicsInput, setTopicsInput] = useState<string>("Arrays, Hash Table");
   const [strictMode, setStrictMode] = useState(false);
@@ -164,7 +166,8 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
           : "Ticket created. Searching for a suitable partner..."
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not start matching.";
+      const message =
+        error instanceof Error ? error.message : "Could not start matching.";
       setMatchError(message);
       setQueueStatus("error");
     }
@@ -192,7 +195,9 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
   const pollTicket = useCallback(
     async (id: string) => {
       try {
-        const response = await fetch(`/api/v1/matching/tickets/${id}`, { cache: "no-store" });
+        const response = await fetch(`/api/v1/matching/tickets/${id}`, {
+          cache: "no-store",
+        });
         if (!response.ok) {
           if (response.status === 404) {
             setQueueStatus("error");
@@ -258,7 +263,8 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
     };
   }, [ticketId, queueStatus, pollTicket]);
 
-  const queueDisabled = queueStatus === "queueing" || queueStatus === "searching";
+  const queueDisabled =
+    queueStatus === "queueing" || queueStatus === "searching";
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -270,7 +276,8 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
             Quick Match
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Select your preferences and let us pair you up. Question selection and session creation happen automatically once a partner is ready.
+            Select your preferences and let us pair you up. Question selection
+            and session creation happen automatically once a partner is ready.
           </p>
           <div className="space-y-4 mb-6">
             <div>
@@ -345,7 +352,9 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
               onClick={handleFindPartner}
               className="w-full bg-primary text-primary-foreground font-medium py-3 rounded hover:opacity-90 transition-opacity disabled:opacity-50"
             >
-              {queueStatus === "searching" ? "Searching..." : "Find Partner Now"}
+              {queueStatus === "searching"
+                ? "Searching..."
+                : "Find Partner Now"}
             </button>
             {ticketId && (
               <button
@@ -357,7 +366,9 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
             )}
           </div>
           {statusMessage && (
-            <p className="mt-4 text-sm text-muted-foreground">{statusMessage}</p>
+            <p className="mt-4 text-sm text-muted-foreground">
+              {statusMessage}
+            </p>
           )}
           {matchError && (
             <p className="mt-2 text-sm text-destructive">{matchError}</p>
@@ -375,58 +386,7 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
         </div>
 
         {/* Available Partners */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
-            Available Partners ({partnersAvailable.length})
-          </h2>
-          <div className="space-y-3">
-            {partnersAvailable.map((partner) => (
-              <div
-                key={partner.id}
-                className="flex items-center justify-between p-4 bg-card/50 border border-border rounded hover:border-primary/50 transition-colors group cursor-pointer"
-              >
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white">
-                    {partner.avatar}
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-foreground">
-                      {partner.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Level {partner.level} • Joined {partner.joinedAt}
-                    </p>
-                    <div className="flex gap-2 mt-2">
-                      {partner.skillTags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-xs bg-primary/20 text-primary px-2 py-1 rounded"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    {partner.recentProblem}
-                  </p>
-                  <span
-                    className={`text-xs font-medium px-2 py-1 rounded block ${getDifficultyColor(
-                      partner.difficulty
-                    )}`}
-                  >
-                    {partner.difficulty}
-                  </span>
-                </div>
-                <button className="ml-4 px-4 py-2 bg-primary text-primary-foreground rounded font-medium text-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                  Invite
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        <RecentSubmissionsTab />
       </div>
 
       {/* Sidebar */}
