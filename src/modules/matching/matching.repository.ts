@@ -451,26 +451,122 @@ export const MatchingRepo = {
     };
   },
 
-  async findPairByTicketId(ticketId: string): Promise<PairDbRow | null> {
-    const pool = await getConnectionPool();
-    const { rows } = await pool.query(
-      `
-                select * from pairs where ticket_id_a = $1 or ticket_id_b = $1 limit 1`,
-      [ticketId]
-    );
-    const p = rows[0];
-    if (!p) return null;
-    return {
-      pair_id: p.pair_id,
-      ticket_id_a: p.ticket_id_a,
-      ticket_id_b: p.ticket_id_b,
-      matched_at: toTimestamp(new Date(p.matched_at)),
-      strict_mode: p.strict_mode,
-      question_id: p.question_id ?? null,
-      collaboration_id: p.collaboration_id ?? null,
-      session_id: p.session_id ?? null,
-    };
-  },
+    // Strict: same difficulty & not same user/ticket; FIFO; small batch
+    async findPartnerStrictMany(anchor: TicketDbRow, limit = 10): Promise<TicketDbRow[]> {
+        const pool = await getConnectionPool();
+        const normAnchorTopics = explodeTopics(anchor.topics ?? []);
+
+        const { rows } = await pool.query<TicketSqlRow>(
+            `
+            SELECT *
+            FROM tickets
+            WHERE status = 'QUEUED'
+            AND ticket_id <> $1
+            AND user_id  <> $2
+            AND upper(difficulty) = upper($3)
+            -- subset either way on topics
+            AND (
+                coalesce(topics,'{}'::text[]) @> $4::text[]
+                OR $4::text[] @> coalesce(topics,'{}'::text[])
+            )
+            ORDER BY enqueued_at ASC, ticket_id ASC
+            LIMIT $5
+            `,
+            [anchor.ticket_id, anchor.user_id, anchor.difficulty, normAnchorTopics, limit]
+        );
+
+  // Map each TicketSqlRow → TicketDbRow (adds proper types + timestamps)
+  return rows.map((r) => ({
+    ticket_id: r.ticket_id,
+    user_id: r.user_id,
+    difficulty: r.difficulty as Difficulty,      // type-safe cast
+    topics: r.topics ?? [],
+    skill_level: r.skill_level as SkillLevel,
+    strict_mode: r.strict_mode,
+    status: r.status as TicketStatus,
+    enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+    last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+    timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+    pair_id: r.pair_id ?? null,
+  }));
+},
+
+async findPartnerFlexibleMany(anchor: TicketDbRow, limit = 20): Promise<TicketDbRow[]> {
+  const pool = await getConnectionPool();
+
+  const ignoreTopics     = !!anchor.relax_topics;
+  const relaxSkill       = !!anchor.relax_skill;                  // keep skill relax
+  const normAnchorTopics = explodeTopics(anchor.topics ?? []);
+
+  const { rows } = await pool.query<TicketSqlRow>(
+    `
+    SELECT *
+      FROM tickets
+     WHERE status = 'QUEUED'
+       AND ticket_id <> $1
+       AND user_id <> $2
+       AND upper(difficulty) = upper($3)                          -- 🔒 always same difficulty
+       AND ($4::boolean OR skill_level  = $5)                     -- relax_skill only
+       AND (
+        $8::boolean                                           -- ignoreTopics short-circuit
+            OR strict_mode = false
+            OR (
+                (coalesce(topics,'{}'::text[]) @> $6::text[] OR $6::text[] @> coalesce(topics,'{}'::text[]))
+            )
+        )
+
+     ORDER BY enqueued_at ASC, ticket_id ASC
+     LIMIT $7
+    `,
+    [
+      anchor.ticket_id,           // $1
+      anchor.user_id,             // $2
+      anchor.difficulty,          // $3 
+      relaxSkill,                 // $4
+      anchor.skill_level,         // $5
+      normAnchorTopics,           // $6
+      limit,                      // $7
+      ignoreTopics,               // $8
+    ]
+  );
+
+  return rows.map((r) => ({
+    ticket_id: r.ticket_id,
+    user_id: r.user_id,
+    difficulty: r.difficulty as Difficulty,
+    topics: r.topics ?? [],
+    skill_level: r.skill_level as SkillLevel,
+    strict_mode: r.strict_mode,
+    status: r.status as TicketStatus,
+    enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+    last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+    timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+    pair_id: r.pair_id ?? null,
+    // pass through relax flags for downstream scoring if you need them
+    relax_topics: anchor.relax_topics,
+    relax_skill: anchor.relax_skill,
+    // (intentionally omit relax_difficulty since we’re not honoring it in flex)
+  }));
+},
+        async findPairByTicketId(ticketId: string): Promise<PairDbRow | null> {
+            const pool = await getConnectionPool();
+            const { rows } = await pool.query(`
+                select * from pairs where ticket_id_a = $1 or ticket_id_b = $1 limit 1`, 
+                [ticketId]
+            );
+            const p = rows[0];
+            if (!p) return null;
+            return {
+                pair_id: p.pair_id,
+                ticket_id_a: p.ticket_id_a,
+                ticket_id_b: p.ticket_id_b,
+                matched_at: toTimestamp(new Date(p.matched_at)),
+                strict_mode: p.strict_mode,
+                question_id: p.question_id ?? null,
+                collaboration_id: p.collaboration_id ?? null,
+                session_id: p.session_id ?? null,
+            };
+        },
 
   async attachSession(
     pairId: string,
