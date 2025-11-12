@@ -1,7 +1,11 @@
 import { getConnectionPool } from "@/lib/db";
-import { Pool } from "pg";
 import { RankingRepository } from "./ranking.repository";
-import { SessionCompletedEvent, SessionOutcome, UserRanking, QuestionSolvedEvent } from "./ranking.types"; // Correct types
+
+// --- 1. ADD THESE IMPORTS ---
+// We need these to read the submissions and questions tables
+import { sessionRepository } from "../collaboration/session.repository";
+import { questionService } from "../question/question.service";
+// -----------------------------
 
 /**
  * Calculates points for a solved question.
@@ -15,75 +19,77 @@ function getPointsForDifficulty(difficulty: "EASY" | "MEDIUM" | "HARD"): number 
   }
 }
 
-// These functions are no longer needed
-// function getDisplayRank(rating: number): string { ... }
-// function calculateElo(...) { ... }
-
+// =========================================================================
+// == RankingService
+// == This service handles the Leaderboard, User Search, and Rank Recalculation.
+// =========================================================================
 export const RankingService = {
   
-  async processSessionOutcome(event: SessionCompletedEvent): Promise<void> {
-    const pool = await getConnectionPool();
-    const client = await pool.connect();
+  // --- 'processSessionOutcome' and 'processQuestionSolved' are DELETED ---
 
-    try {
-      await client.query("BEGIN"); 
-
-      // --- THIS IS THE FIX ---
-      // Now passing the correct email properties from the event
-      const { userA, userB } = await RankingRepository.getAndLockUsersForUpdate(
-        client,
-        event.user_a_email, // <-- Changed
-        event.user_b_email  // <-- Changed
-      );
-
-      // Update User A's stats
-      if (event.outcome === "A_WIN") userA.wins++;
-      if (event.outcome === "B_WIN") userA.losses++;
-      if (event.outcome === "DRAW") userA.draws++;
-
-      // Update User B's stats
-      if (event.outcome === "B_WIN") userB.wins++;
-      if (event.outcome === "A_WIN") userB.losses++;
-      if (event.outcome === "DRAW") userB.draws++;
-
-      await Promise.all([
-        RankingRepository.updateMatchStats(client, userA),
-        RankingRepository.updateMatchStats(client, userB),
-      ]);
-
-      await client.query("COMMIT"); 
-    } catch (error) {
-      await client.query("ROLLBACK"); 
-      console.error("Failed to process match stats update:", error);
-      throw error; 
-    } finally {
-      client.release();
-    }
-  },
-
-  /**
-   * Processes a 'question_solved' event to add points to 'elo'.
-   */
-  async processQuestionSolved(event: QuestionSolvedEvent): Promise<void> {
-    const points = getPointsForDifficulty(event.difficulty);
-    if (points === 0) return;
-
-    try {
-      await RankingRepository.addEloPoints(event.email, points);
-    } catch (error) {
-      console.error(`Failed to add points for ${event.email}:`, error);
-    }
-  },
-
-  // --- API Methods ---
+  // --- API Methods (for your UI) ---
   
   async getLeaderboard(page: number, limit: number) {
     const offset = (page - 1) * limit;
     return RankingRepository.getLeaderboard(limit, offset);
   },
 
-  // This is correct and matches your UI
   async getUserRank(username: string) {
     return RankingRepository.getUserRank(username);
+  },
+
+  // --- THIS IS THE "REFRESH BUTTON" FUNCTION THAT WAS MISSING ---
+  async recalculateAllRanks(): Promise<{ status: string, submissionsProcessed: number, usersUpdated: number }> {
+    try {
+      console.log("[RankingService] Starting full rank recalculation...");
+      
+      // 1. Get all submissions from the submissions table
+      const allSubmissions = await sessionRepository.findAllSubmissions();
+      // 2. Get all questions to find their difficulty
+      const allQuestions = await questionService.getAllQuestions();
+
+      // Create a quick lookup map for question difficulty
+      const difficultyMap = new Map<number, "EASY" | "MEDIUM" | "HARD">();
+      allQuestions.forEach(q => {
+        difficultyMap.set(q.question_id, q.difficulty.toUpperCase() as "EASY" | "MEDIUM" | "HARD");
+      });
+
+      // 3. Reset all ELO scores to 0
+      await RankingRepository.resetAllEloScores();
+
+      // 4. Create a temporary map to store new scores
+      const userScores = new Map<string, number>();
+
+      // 5. Loop through every submission and calculate points
+      for (const submission of allSubmissions) {
+        const difficulty = difficultyMap.get(submission.question_id);
+        if (!difficulty) continue; 
+
+        const points = getPointsForDifficulty(difficulty);
+        if (points === 0) continue;
+
+        userScores.set(submission.user1_email, (userScores.get(submission.user1_email) || 0) + points);
+        userScores.set(submission.user2_email, (userScores.get(submission.user2_email) || 0) + points);
+      }
+
+      // 6. Update the database with new scores
+      const updatePromises = [];
+      for (const [email, totalPoints] of userScores.entries()) {
+        updatePromises.push(RankingRepository.addEloPoints(email, totalPoints));
+      }
+
+      await Promise.all(updatePromises);
+      
+      console.log("[RankingService] Recalculation complete.");
+      return { 
+        status: "success", 
+        submissionsProcessed: allSubmissions.length,
+        usersUpdated: userScores.size 
+      };
+
+    } catch (error) {
+      console.error("[RankingService] Recalculation failed:", error);
+      return { status: "error", submissionsProcessed: 0, usersUpdated: 0 };
+    }
   }
 };

@@ -97,7 +97,9 @@ export default function QuestionList({
         setLoading(true);
         setError(null);
 
-        const response = await fetch("/api/v1/question");
+        const response = await fetch("/api/v1/question", {
+          headers: { Authorization: "Bearer readerToken" },
+        });
 
         if (!response.ok) {
           throw new Error("Network response was not ok");

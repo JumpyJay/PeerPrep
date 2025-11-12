@@ -2,7 +2,7 @@ import Cookies from "js-cookie";
 
 function handleLogout() {
   Cookies.remove("token");
-  // ... any other logout logic
+  window.location.href = "/user";
 }
 
 export { handleLogout };

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import QuestionList from "./components/questionList";
-import QuestionModal from "./components/questionModal";
+import QuestionList from "@/app/question/components/questionList";
+import QuestionModal from "@/app/question/components/questionModal";
 import type { Question } from "@/modules/question/question.types";
 
-export default function QuestionPage() {
+export default function QuestionTab() {
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(
     null
   );

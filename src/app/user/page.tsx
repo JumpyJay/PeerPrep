@@ -28,15 +28,27 @@ export default function UserPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");
 
-      setMessage(data.message);
-      // store in cookies
-      // to be accessible to middle which lives at the edge
-      if (!isRegister && data.token)
-        Cookies.set("token", data.token, { expires: 1 });
+      if (!data.token) {
+        setMessage(data.message);
+      } else {
+        // store in cookies
+        // to be accessible to middle which lives at the edge
+        if (!isRegister && data.token)
+          Cookies.set("token", data.token, { expires: 1 });
 
-      setEmail("");
-      setPassword("");
-      if (isRegister) setUsername("");
+        setEmail("");
+        setPassword("");
+        if (isRegister) {
+          // case of successful registration
+          setUsername("");
+          // set tab to login
+          setIsRegister(false);
+        } else {
+          // case of successful login
+          // redirect to home
+          window.location.href = "/";
+        }
+      }
     } catch (err: unknown) {
       if (err instanceof Error) {
         throw new Error(err.message);
