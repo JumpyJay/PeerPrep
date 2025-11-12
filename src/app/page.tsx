@@ -2,13 +2,15 @@
 
 import Cookies from "js-cookie";
 import { decodeJwtPayload } from "@/lib/decodeJWT";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MatchmakingTab } from "@/components/matchMakingTab";
 import QuestionTab from "@/components/questionTab";
 import { useRouter } from "next/navigation";
+import { handleLogout } from "@/lib/logoutHelper";
 
 export default function Home() {
   const [userEmail, setUserEmail] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
   const router = useRouter();
 
   useEffect(() => {
@@ -19,21 +21,34 @@ export default function Home() {
     if (email) {
       setUserEmail(email);
     }
+
+    // fetch user profile to get username 
+    fetch("/api/v1/user/profile", {
+      method: "GET",
+      credentials: "include",
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.username) {
+          setUserName(data.username);
+        }
+      })
+      .catch((err) => console.error(err));
   }, []);
   const [activeTab, setActiveTab] = useState<"matchmaking" | "problems">(
     "matchmaking"
   );
-  const handleLogout = useCallback(() => {
-    Cookies.remove("token");
-    window.location.href = "/user";
-  }, []);
   const displayName = useMemo(() => {
-    if (userEmail) {
+    if (userName) { 
+      // display username
+      return userName;
+    } else if (userEmail) { 
+      // fallback
       const [name] = userEmail.split("@");
       return name || userEmail;
     }
     return "Guest";
-  }, [userEmail]);
+  }, [userName, userEmail]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -52,6 +67,14 @@ export default function Home() {
                 <div className="text-right">
                   <p className="text-sm font-medium text-foreground">{displayName}</p>
                   <p className="text-xs text-muted-foreground">{userEmail}</p>
+                </div>
+                {/* Clickable avatar */}
+                <div
+                  onClick={() => router.push("/user/profile")}
+                  className="h-10 w-10 rounded-full bg-black cursor-pointer hover:opacity-80 transition flex items-center justify-center text-white font-bold"
+                  title="Go to your profile"
+                >
+                  {userEmail ? userEmail.charAt(0).toUpperCase() : "?"}
                 </div>
                 <button
                   onClick={handleLogout}
