@@ -38,6 +38,12 @@ export class SessionService {
     return this.repository.findSessionById(session_id);
   }
 
+  // function for deleting a session
+  public async deleteSession(session_id: number) {
+    console.log("CollabService: Deleting a session.");
+    return this.repository.deleteSession(session_id);
+  }
+
   // function for terminating a session
   // create row in submissions table
   public async terminateSession(
@@ -49,11 +55,24 @@ export class SessionService {
     return this.repository.finishSession(session_id);
   }
 
-  // define fetch submission function
-  public async findSubmission(user_email: string) {
+  // define fetch submission function (by user_email)
+  public async findSubmissionByUser(user_email: string) {
     console.log("CollabService: Fetching a submission.");
     // call repository function
     return this.repository.findSubmissionByUser(user_email);
+  }
+
+  // define fetch attempt
+  public async findAttempt(question_id: number, user_email: string) {
+    console.log("CollabService: Fetching attempt history.");
+    // call repository function
+    const submissionsByUser = await this.repository.findSubmissionByUser(
+      user_email
+    );
+    const attempts = submissionsByUser.filter(
+      (submission) => submission.question_id === question_id
+    );
+    return attempts;
   }
 
   // create function to submit session

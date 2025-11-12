@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CodingInterface } from "../../components/codingInterface";
 import { useParams, useRouter } from "next/navigation";
-import { Session } from "@/modules/collaboration/session.types";
+import { Session, Submission } from "@/modules/collaboration/session.types";
 import { Question } from "@/modules/question/question.types";
 import Cookies from "js-cookie";
 import { toast } from "sonner";
@@ -13,8 +13,10 @@ export default function CollaborationPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = Number(params.id);
+  const [userEmail, setUserEmail] = useState<String>("");
   const [session, setSession] = useState<Session>();
   const [question, setQuestion] = useState<Question>();
+  const [attempts, setAttempts] = useState<Submission[]>([]);
 
   useEffect(() => {
     // define async function to fetch and set session and question
@@ -66,6 +68,9 @@ export default function CollaborationPage() {
         } else if (session?.is_completed) {
           router.push("/");
           toast.error("Session has already been completed.");
+        } else {
+          // user is authorised, set user email state
+          setUserEmail(String(myToken.id));
         }
       } else {
         // Handle case where there is no token
@@ -99,10 +104,45 @@ export default function CollaborationPage() {
     // this effect depends on session state
   }, [session]);
 
+  useEffect(() => {
+    // define a function to fetch attempt history
+    const fetchAttempts = async () => {
+      if (!userEmail || !session?.question_id) {
+        return;
+      }
+
+      try {
+        const attemptResponse = await fetch(
+          "/api/v1/collaboration?type=findattempt",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              question_id: session.question_id,
+              user_email: userEmail,
+            }),
+          }
+        );
+        const attempts: Submission[] = await attemptResponse.json();
+        setAttempts(attempts);
+      } catch (error) {
+        console.log("Error fetching attempt history: ", error);
+      }
+    };
+
+    fetchAttempts();
+  }, [userEmail, session]);
+
   return (
     <div>
       {question && session && (
-        <CodingInterface sessionId={sessionId} question={question} />
+        <CodingInterface
+          sessionId={sessionId}
+          question={question}
+          attempts={attempts}
+        />
       )}
     </div>
   );

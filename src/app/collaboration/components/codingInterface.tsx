@@ -3,10 +3,13 @@ import { QuestionPanel } from "./questionPanel";
 import { CodeEditor } from "./codeEditor";
 import { Question } from "@/modules/question/question.types";
 import Link from "next/link";
+import { Submission } from "@/modules/collaboration/session.types";
+import { attempt } from "lodash";
 
 interface CodingInterfaceProps {
   sessionId: number;
   question: Question;
+  attempts: Submission[];
 }
 
 export function CodingInterface(params: CodingInterfaceProps) {
@@ -27,7 +30,7 @@ export function CodingInterface(params: CodingInterfaceProps) {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Question */}
-        <QuestionPanel question={params.question} />
+        <QuestionPanel question={params.question} attempts={params.attempts} />
 
         {/* Right Panel - Code Editor */}
         <CodeEditor sessionId={params.sessionId} />

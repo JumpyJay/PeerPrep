@@ -57,6 +57,33 @@ export class SessionRepository {
     }
   }
 
+  // define function for delete session
+  // use case: when end session, not submit
+  public async deleteSession(session_id: number) {
+    if (!this.pool) {
+      this.pool = await getConnectionPool();
+    }
+    const client = await this.pool.connect();
+    try {
+      // delete session with the session id == session_id
+      const result = await client.query(
+        "DELETE FROM sessions WHERE session_id = $1",
+        [session_id]
+      );
+      // also delete all related submissions if any
+      client.query("DELETE FROM submissions WHERE session_id = $1", [
+        session_id,
+      ]);
+      // return result
+      return result.rows[0];
+    } catch (error) {
+      console.error("Error deleting session in database: ", error);
+      throw new Error("Could not delete session.");
+    } finally {
+      client.release();
+    }
+  }
+
   // define fund session function
   public async findSessionById(session_id: number): Promise<Session> {
     if (!this.pool) {
@@ -101,7 +128,7 @@ export class SessionRepository {
     }
   }
 
-  // define fetch submission function
+  // define fetch submission function (from user_email)
   // return all matching submission where user1_email or user2_email matches
   public async findSubmissionByUser(user_email: string) {
     if (!this.pool) {

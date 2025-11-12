@@ -42,7 +42,9 @@ export default function ProfilePage() {
 
   if (loading)
     return (
-      <div className="flex justify-center items-center h-screen">Loading...</div>
+      <div className="flex justify-center items-center h-screen">
+        Loading...
+      </div>
     );
 
   if (error)
@@ -63,7 +65,12 @@ export default function ProfilePage() {
       {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-7xl px-6 py-4">
-          <h1 className="text-2xl font-bold text-foreground">PeerPrep</h1>
+          <Link
+            href="/"
+            className="text-2xl font-bold text-foreground hover:opacity-80 transition"
+          >
+            PeerPrep
+          </Link>
           <p className="text-sm text-muted-foreground">
             Collaborative Problem Solving
           </p>
@@ -101,14 +108,14 @@ export default function ProfilePage() {
 
             {/* Buttons */}
             <div className="flex flex-col space-y-3 w-full mt-4">
-              { /* Placeholder for buttons */ }
+              {/* Placeholder for buttons */}
               <button className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition">
                 Change Username
               </button>
               <button className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition">
                 Change Password
               </button>
-              { /* Logout button */ }
+              {/* Logout button */}
               <button
                 onClick={handleLogout}
                 className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition"

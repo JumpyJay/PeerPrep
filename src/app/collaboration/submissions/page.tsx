@@ -46,7 +46,7 @@ export default function SubmissionPage() {
       setError(null);
       try {
         const response = await fetch(
-          "/api/v1/collaboration?type=findsubmission",
+          "/api/v1/collaboration?type=findsubmissionbyuser",
           {
             method: "POST",
             headers: {
