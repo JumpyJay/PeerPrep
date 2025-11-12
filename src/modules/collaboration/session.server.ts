@@ -136,7 +136,7 @@ io.on("connection", (socket: Socket) => {
     try {
       // 2. Use the FULL, absolute URL
       await fetch(
-        `http://localhost:3000/api/v1/collaboration?type=submitsession`, // Use port 3000 (your Next.js app)
+        `${process.env.WEBSOCKET_SERVER_CORS}/api/v1/collaboration?type=submitsession`,
         {
           method: "POST",
           headers: {
