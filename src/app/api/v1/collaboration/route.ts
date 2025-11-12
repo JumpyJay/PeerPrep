@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // check for type
-    // case when type is "create"
+    // ________________________________________________________
+    // type 1: create (create a session)
     if (type === "create") {
       const { question_id, user1_email, user2_email } = body;
       // simple validation
@@ -57,6 +58,9 @@ export async function POST(request: NextRequest) {
 
       // return a 201 Created status, a successful POST
       return NextResponse.json(newSession, { status: 201 });
+
+      // ________________________________________________________
+      // type 2: findsession
     } else if (type == "findsession") {
       const { session_id } = body;
       // simple validation if session_id is passed
@@ -74,8 +78,10 @@ export async function POST(request: NextRequest) {
 
       // return a 200 Found status, and the session info found
       return NextResponse.json(foundSession, { status: 200 });
+
+      // ________________________________________________________
+      // type 3: submitsession
     } else if (type == "submitsession") {
-      console.log("submitting session route hit!!!!!_________");
       // retrieve session_id, code_solution
       const { session_id, code_solution } = body;
       // simple validaton, checking whether params passed are correct
@@ -94,7 +100,10 @@ export async function POST(request: NextRequest) {
       sessionService.submitSession(session_id, code_solution);
       // return a 200 success status
       return NextResponse.json({ status: 200 });
-    } else if (type == "findsubmission") {
+
+      // ________________________________________________________
+      // type 4: findsubmission
+    } else if (type == "findsubmissionbyuser") {
       // define find submission api route
       const { user_email } = body;
       // simple validation if user_email is passed
@@ -106,12 +115,51 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      const foundSubmission: Submission[] = await sessionService.findSubmission(
-        user_email
-      );
+      const foundSubmission: Submission[] =
+        await sessionService.findSubmissionByUser(user_email);
 
       // return a 200 Found status, and the session info found
       return NextResponse.json(foundSubmission, { status: 200 });
+
+      // ________________________________________________________
+      // type 5: findattempt
+      // i.e. find all submissions by user under the question
+    } else if (type == "findattempt") {
+      console.log("fetch attempt route hit!!!!!_________");
+      const { question_id, user_email } = body;
+      // simple params verification
+      if (!user_email || !question_id) {
+        console.log("missing response field!!!");
+        return NextResponse.json(
+          {
+            error: "Missing response fields: user_email and/or question_id",
+          },
+          { status: 400 }
+        );
+      }
+
+      const foundAttempt: Submission[] = await sessionService.findAttempt(
+        question_id,
+        user_email
+      );
+
+      return NextResponse.json(foundAttempt, { status: 200 });
+
+      // ________________________________________________________
+      // type 6: deletesession
+    } else if (type == "deletesession") {
+      const { session_id } = body;
+      // check is session_id is passed
+      if (!session_id) {
+        return NextResponse.json(
+          {
+            error: "Missing required fields: session_id",
+          },
+          { status: 400 }
+        );
+      }
+      sessionService.deleteSession(session_id);
+      return NextResponse.json({ status: 200 });
     } else {
       // handle other types or missing type
       return NextResponse.json(
