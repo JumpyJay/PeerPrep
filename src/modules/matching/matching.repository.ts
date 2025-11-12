@@ -35,7 +35,7 @@ type PairSqlRow = {
   ticket_id_b: string;
   matched_at: string;
   strict_mode: boolean;
-  question_id: string | null;
+  question_id: number | null;
   collaboration_id: string | null;
   session_id: string | null;
 };
@@ -54,10 +54,24 @@ const uuid = () =>
 */
 
 // Normalize topics (lowercase) for consistent overlap checks
-const normTopics = (xs: string[] | undefined | null): string[] =>
-  Array.isArray(xs)
-    ? xs.map((s) => s.trim().toLowerCase()).filter(Boolean)
-    : [];
+// const normTopics = (xs: string[] | undefined | null): string[] =>
+    // Array.isArray(xs) ? xs.map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+
+function explodeTopics(input: unknown): string[] {
+  // Accept string or string[]
+  const raw: string[] = Array.isArray(input) ? input.map(String) : (typeof input === "string" ? [input] : []);
+  const out: string[] = [];
+  for (const item of raw) {
+    // split on commas/semicolons/pipes
+    const parts = item.split(/[,\|;]+/);
+    for (const p of parts) {
+      const t = p.trim().toLowerCase();
+      if (t) out.push(t);
+    }
+  }
+  // de-dup
+  return Array.from(new Set(out));
+}
 
 function strictOverlapThresholdFor(nAnchorTopics: number): number {
   if (nAnchorTopics <= 0) return 0; // no topic constraint
@@ -92,6 +106,19 @@ function topicDistance(a: string[], b: string[]): number {
   return 1 - overlap; // 0 = perfect match, 1 = no overlap
 }
 
+const sameDiff = (a: unknown, b: unknown) =>
+  typeof a === "string" && typeof b === "string"
+    ? a.toUpperCase() === b.toUpperCase()
+    : false;
+
+function topicsSubsetEitherWay(a: unknown, b: unknown): boolean {
+  const A = new Set(explodeTopics(a));
+  const B = new Set(explodeTopics(b));
+  const A_in_B = [...A].every(t => B.has(t));
+  const B_in_A = [...B].every(t => A.has(t));
+  return A_in_B || B_in_A;
+}
+
 // -------------------------------------------
 // Public Repository API (mock implementation)
 // -------------------------------------------
@@ -99,16 +126,16 @@ function topicDistance(a: string[], b: string[]): number {
 
 /** Create a new QUEUED ticket (idempotent at service layer; DB enforces uniqueness per user) */
 export const MatchingRepo = {
-  async createTicket(p: {
-    userId: string;
-    difficulty: Difficulty | string;
-    topics: string[];
-    skillLevel: SkillLevel | string;
-    strictMode: boolean;
-    timeoutSeconds: number;
-  }): Promise<TicketDbRow> {
-    const pool = await getConnectionPool();
-    const topics = normTopics(p.topics);
+    async createTicket(p: {
+        userId: string;
+        difficulty: Difficulty | string;
+        topics: string[];
+        skillLevel: SkillLevel | string;
+        strictMode: boolean;
+        timeoutSeconds: number;
+    }): Promise<TicketDbRow> {
+        const pool = await getConnectionPool();
+        const topics = explodeTopics(p.topics);
 
     try {
       const text = `
@@ -272,61 +299,83 @@ export const MatchingRepo = {
     };
   },
 
-  /**
-   * STRICT partner search:
-   * - Same difficulty & skill level
-   * - Topics: require a MINIMUM OVERLAP with the anchor's topics (Jaccard-based),
-   *   not a hard superset. The required overlap threshold depends on the number
-   *   of anchor topics (see strictOverapThresholdFor). If the anchor's strict_mode
-   *   is true, we bump the threshold by +0.1 (capped at 1).
-   * - Excludes the same user and the same ticket.
-   * - Among eligible candidates, pick the OLDEST (FIFO by enqueued_at)
-   */
-  async findPartnerStrict(anchor: TicketDbRow): Promise<TicketDbRow | null> {
-    if (anchor.status !== "QUEUED") return null;
-    const pool = await getConnectionPool();
-    const { rows } = await pool.query<TicketSqlRow>(
-      `select * 
-                from tickets
-             where status = 'QUEUED'
-               and ticket_id <> $1
-               and user_id <> $2
-               and difficulty = $3
-               and skill_level = $4
-             order by enqueued_at asc
-             limit 100`,
-      [anchor.ticket_id, anchor.user_id, anchor.difficulty, anchor.skill_level]
-    );
+    /**
+     * STRICT partner search:
+     * - Same difficulty & skill level
+     * - Topics: require a MINIMUM OVERLAP with the anchor's topics (Jaccard-based),
+     *   not a hard superset. The required overlap threshold depends on the number
+     *   of anchor topics (see strictOverapThresholdFor). If the anchor's strict_mode 
+     *   is true, we bump the threshold by +0.1 (capped at 1).
+     * - Excludes the same user and the same ticket.
+     * - Among eligible candidates, pick the OLDEST (FIFO by enqueued_at)
+     */
+    async findPartnerStrict(anchor: TicketDbRow): Promise<TicketDbRow | null> {
+        if (anchor.status !== "QUEUED") return null;
 
-    const aTopics = normTopics(anchor.topics);
-    const base = strictOverlapThresholdFor(aTopics.length);
-    const need = anchor.strict_mode ? Math.min(1, base + 0.1) : base;
+        const pool = await getConnectionPool();
 
-    let best: TicketSqlRow | null = null;
-    for (const r of rows) {
-      const cTopics = normTopics(r.topics ?? []);
-      const overlap = topicOverlap(aTopics, cTopics);
-      if (overlap < need) continue;
-      if (!best) best = r;
-    }
-    if (!best) return null;
+        const { rows } = await pool.query<TicketSqlRow>(
+            `select *
+            from tickets
+            where status = 'QUEUED'
+                and ticket_id <> $1
+                and user_id  <> $2
+                and upper(difficulty) = upper($3)
+            order by enqueued_at asc
+            limit 200`,
+            [anchor.ticket_id, anchor.user_id, anchor.difficulty]
+        );
 
-    return {
-      ticket_id: best.ticket_id,
-      user_id: best.user_id,
-      difficulty: best.difficulty as Difficulty,
-      topics: best.topics ?? [],
-      skill_level: best.skill_level as SkillLevel,
-      strict_mode: best.strict_mode,
-      status: best.status as TicketStatus,
-      enqueued_at: toTimestamp(new Date(best.enqueued_at)),
-      last_seen_at: toTimestamp(new Date(best.last_seen_at)),
-      timeout_at: best.timeout_at
-        ? toTimestamp(new Date(best.timeout_at))
-        : null,
-      pair_id: best.pair_id ?? null,
-    };
-  },
+        const aTopics = explodeTopics(anchor.topics);
+        const base = strictOverlapThresholdFor(aTopics.length);
+        const need = anchor.strict_mode ? Math.min(1, base + 0.1) : base;
+
+        // helper function to convert SQL row -> TicketDbRow
+        const mapRow = (r: TicketSqlRow): TicketDbRow => ({
+            ticket_id: r.ticket_id,
+            user_id: r.user_id,
+            difficulty: r.difficulty as Difficulty,
+            topics: r.topics ?? [],
+            skill_level: r.skill_level as SkillLevel,
+            strict_mode: r.strict_mode,
+            status: r.status as TicketStatus,
+            enqueued_at: toTimestamp(new Date(r.enqueued_at)),
+            last_seen_at: toTimestamp(new Date(r.last_seen_at)),
+            timeout_at: r.timeout_at ? toTimestamp(new Date(r.timeout_at)) : null,
+            pair_id: r.pair_id ?? null,
+        });
+
+        for (const r of rows) {
+            const cTopics = explodeTopics(r.topics ?? []);
+            const overlap = topicOverlap(aTopics, cTopics);
+
+            const isMix = !!anchor.strict_mode !== !!r.strict_mode;
+            const isBothStrict = !!anchor.strict_mode && !!r.strict_mode;
+            const sameDifficulty =
+            typeof anchor.difficulty === "string" &&
+            typeof r.difficulty === "string" &&
+            anchor.difficulty.toUpperCase() === r.difficulty.toUpperCase();
+            const subsetEitherWay = topicsSubsetEitherWay(anchor.topics, r.topics);
+
+            // 1) strict/non-strict mix bypass
+            if (isMix && sameDifficulty && subsetEitherWay) {
+            return mapRow(r);
+            }
+
+            // 2) both strict bypass
+            if (isBothStrict && sameDifficulty && subsetEitherWay) {
+            return mapRow(r);
+            }
+
+            // 3) normal strict rule
+            if (overlap < need) continue;
+            if (r.skill_level !== anchor.skill_level) continue;
+
+            return mapRow(r);
+        }
+
+        return null;
+    },
 
   /**
    * FLEXIBLE partner search (filter in SQL, score in JS):
@@ -337,45 +386,46 @@ export const MatchingRepo = {
   async findPartnerFlexible(anchor: TicketDbRow): Promise<TicketDbRow | null> {
     if (anchor.status !== "QUEUED") return null;
 
-    const ignoreTopics = !!anchor.relax_topics;
-    const relaxDifficulty = !!anchor.relax_difficulty;
-    const relaxSkill = !!anchor.relax_skill;
+        const ignoreTopics = !!anchor.relax_topics;
+        const relaxDifficulty = !!anchor.relax_difficulty;
+        const relaxSkill = !!anchor.relax_skill;
+        
+        const pool = await getConnectionPool();
 
-    const pool = await getConnectionPool();
-    const { rows } = await pool.query<TicketSqlRow>(
-      `select *
+        const normAnchorTopics = explodeTopics(anchor.topics ?? [])
+        
+        const { rows } = await pool.query<TicketSqlRow>(
+            `select *
                 from tickets
              where status = 'QUEUED'
                and ticket_id <> $1
                and user_id <> $2
                and ($3::boolean or difficulty = $4)
                and ($5::boolean or skill_level = $6)
+               and (
+                strict_mode = false
+                or (
+                    topics @> $7::text[] or $7::text[] @> topics  -- same topic set
+                    and upper(difficulty) = upper($4)              -- same difficulty
+                    )
+                )
              order by enqueued_at asc
              limit 200`,
-      [
-        anchor.ticket_id,
-        anchor.user_id,
-        relaxDifficulty,
-        anchor.difficulty,
-        relaxSkill,
-        anchor.skill_level,
-      ]
-    );
+            [anchor.ticket_id, anchor.user_id, relaxDifficulty, anchor.difficulty, relaxSkill, anchor.skill_level, normAnchorTopics]
+        );
 
-    const aTopics = normTopics(anchor.topics);
-    const scored: Array<{ r: TicketSqlRow; score: number }> = [];
+        const aTopics = explodeTopics(anchor.topics);
+        const scored: Array<{ r: TicketSqlRow; score: number }> = [];
 
-    for (const r of rows) {
-      const cTopics = normTopics(r.topics ?? []);
-      const coverage = ignoreTopics ? 1 : 1 - topicDistance(aTopics, cTopics);
-      const topicComponent = ignoreTopics ? 0.5 : 1 - coverage;
-      const diffPenalty =
-        relaxDifficulty && r.difficulty !== anchor.difficulty ? 0.2 : 0;
-      const skillPenalty =
-        relaxSkill && r.skill_level !== anchor.skill_level ? 0.2 : 0;
-      scored.push({ r, score: topicComponent + diffPenalty + skillPenalty });
-    }
-    scored.sort((x, y) => x.score - y.score);
+        for (const r of rows) {
+            const cTopics = explodeTopics(r.topics ?? []);
+            const coverage = ignoreTopics ? 1 : (1-topicDistance(aTopics, cTopics));
+            const topicComponent = ignoreTopics ? 0.5 : (1 - coverage);
+            const diffPenalty = relaxDifficulty && r.difficulty !== anchor.difficulty ? 0.2 : 0;
+            const skillPenalty = relaxSkill && r.skill_level !== anchor.skill_level ? 0.2 : 0;
+            scored.push({ r, score: topicComponent + diffPenalty + skillPenalty });
+        }
+        scored.sort((x, y) => x.score - y.score);
 
     const best = scored[0]?.r;
     if (!best) return null;
@@ -506,25 +556,25 @@ export const MatchingRepo = {
 
       await client.query("commit");
 
-      return {
-        pair_id: pair.pair_id,
-        ticket_id_a: pair.ticket_id_a,
-        ticket_id_b: pair.ticket_id_b,
-        // user_id_a: a.user_id,
-        // user_id_b: b.user_id,
-        matched_at: toTimestamp(new Date(pair.matched_at)),
-        strict_mode: pair.strict_mode,
-        question_id: pair.question_id ?? null,
-        collaboration_id: pair.collaboration_id ?? null,
-        session_id: pair.session_id ?? null,
-      };
-    } catch (e) {
-      await client.query("rollback");
-      throw e;
-    } finally {
-      client.release();
-    }
-  },
+            return {
+                pair_id: pair.pair_id,
+                ticket_id_a: pair.ticket_id_a,
+                ticket_id_b: pair.ticket_id_b,
+                // user_id_a: a.user_id,
+                // user_id_b: b.user_id,
+                matched_at: toTimestamp(new Date(pair.matched_at)),
+                strict_mode: pair.strict_mode,
+                question_id: pair.question_id ?? null,
+                collaboration_id: pair.collaboration_id ?? null,
+                session_id: pair.session_id ?? null,
+            };
+           } catch (e) {
+            await client.query("rollback");
+            throw e;
+           } finally {
+            client.release();
+           }
+        },
 
   /** Extend the timeout window while still QUEUED (keeps ticket eligible longer)
    * Optionally record which constraints were relaxed.

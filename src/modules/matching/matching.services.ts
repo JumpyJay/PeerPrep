@@ -52,7 +52,56 @@ const CONFIG = {
   partnerRecoveryExtendSeconds: 180,
 };
 
-  
+type PairWithUsers = PairDbRow & { user_id_a: string; user_id_b: string };
+
+function withUsers(pair: PairDbRow, a: string | null, b: string | null): PairWithUsers {
+  // if user ids are missing, fall back to ticket ids so collab can still proceed
+  const userA = a ?? pair.ticket_id_a; 
+  const userB = b ?? pair.ticket_id_b;
+  return { ...pair, user_id_a: userA, user_id_b: userB };
+}
+
+function explodeTopics(input: unknown): string[] {
+  // Accept string or string[]
+  const raw: string[] = Array.isArray(input) ? input.map(String) : (typeof input === "string" ? [input] : []);
+  const out: string[] = [];
+  for (const item of raw) {
+    // split on commas/semicolons/pipes
+    const parts = item.split(/[,\|;]+/);
+    for (const p of parts) {
+      const t = p.trim().toLowerCase();
+      if (t) out.push(t);
+    }
+  }
+  // de-dup
+  return Array.from(new Set(out));
+}
+
+const REQUIRE_SAME_DIFFICULTY_FOR_STRICT_MIX = true; // flip to false if you don’t want this
+
+function topicSet(a: unknown): Set<string> { return new Set(explodeTopics(a)); }
+
+function isSameSet(a: unknown, b: unknown): boolean {
+  const A = topicSet(a), B = topicSet(b);
+  if (A.size !== B.size) return false;
+  for (const t of A) if (!B.has(t)) return false;
+  return true;
+}
+
+function isSubsetEitherWay(a: unknown, b: unknown): boolean {
+  const A = topicSet(a), B = topicSet(b);
+  const A_in_B = [...A].every(t => B.has(t));
+  const B_in_A = [...B].every(t => A.has(t));
+  return A_in_B || B_in_A;
+}
+
+function sameDifficulty(a: unknown, b: unknown): boolean {
+  const A = typeof a === "string" ? normalizeDifficulty(a) : null;
+  const B = typeof b === "string" ? normalizeDifficulty(b) : null;
+  return !!A && !!B && A === B;
+}
+
+
 /**
  * Optional dependency: a function that creates collaboration sessions.
  * Injected from API layer to avoid coupling (and circular imports).
@@ -339,8 +388,15 @@ export const MatchingService = {
           partner: partner.ticket_id,
         })
         const partnerUserId = getUserId(partner);
-        if (partnerUserId && partnerUserId === anchorUserId) {
-          console.warn("[MatchingService] strict partner is same user, skipping");
+
+        // Acceptance guard
+        const allowStrictMix = 
+          isSubsetEitherWay(anchor.topics, partner.topics) &&
+          (!REQUIRE_SAME_DIFFICULTY_FOR_STRICT_MIX || sameDifficulty(anchor.difficulty, partner.difficulty));
+
+        if (partner.strict_mode && !anchor.strict_mode && !allowStrictMix) {
+          console.info("[match] rejecting: partner is strict but anchor is not (no same-topic+difficulty)");
+          // do NOT return; just skip this partner and let flow continue
         } else {
           const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
           if (!pair) return null;
@@ -352,14 +408,24 @@ export const MatchingService = {
             fallbackKey: `${anchor.ticket_id}|${partner.ticket_id}`,
           });
 
+          const pairWithUsers = withUsers(pair, anchorUserId, partnerUserId);
+
           const maybeSessioned = await enrichWithSessionIfConfigured({
-            ...pair,
+            ...pairWithUsers,
             ...(qid != null ? { question_id: qid } : {}),
           });
 
           return mapMatchResult(maybeSessioned);
         }
       }
+    }
+    // if anchor is strict, do NOT fall back to flex
+    if (anchor.strict_mode) {
+      console.info("[match] strict required; skipping flexible fallback", {
+        ticketId,
+        anchorStrict: true
+      });
+      return null;
     }
 
     // ---- FLEXIBLE MATCH PASS ----------------------------------------------
@@ -372,9 +438,16 @@ export const MatchingService = {
           anchor: anchor.ticket_id,
           partner: partner.ticket_id,
         });
+
         const partnerUserId = getUserId(partner);
-        if (partnerUserId && partnerUserId === anchorUserId) {
-          console.warn("[MatchingService] flexible partner is same user, skipping");
+
+        const allowStrictMix = 
+          isSubsetEitherWay(anchor.topics, partner.topics) &&
+          (!REQUIRE_SAME_DIFFICULTY_FOR_STRICT_MIX || sameDifficulty(anchor.difficulty, partner.difficulty));
+
+        if (partner.strict_mode && !anchor.strict_mode && !allowStrictMix) {
+          console.info("[match] rejecting: partner is strict but anchor is not");
+          // skip this partner; continue (function will return null if none)
         } else {
           const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
           if (!pair) return null;
@@ -386,8 +459,10 @@ export const MatchingService = {
             fallbackKey: `${anchor.ticket_id}|${partner.ticket_id}`,
           });
 
+          const pairWithUsers = withUsers(pair, anchorUserId, partnerUserId);
+
           const maybeSessioned = await enrichWithSessionIfConfigured({
-            ...pair,
+            ...pairWithUsers,
             ...(qid != null ? { question_id: qid } : {}),
           });
 
@@ -395,7 +470,6 @@ export const MatchingService = {
         }
       }
     }
-
     return null;
   } catch (e: unknown) {
     console.error("[MatchingService.tryMatch] failed for ticket:", ticketId, e);
@@ -454,6 +528,10 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
 
     // attempt helper (strict | flex)
     const attempt = async (mode: "strict" | "flex") => {
+      // 1) Mode guard: strict anchors never try flex
+      if (mode === "flex" && workingRow.strict_mode) {
+        return null;
+      }
       const partner =
         mode === "strict"
           ? await MatchingRepo.findPartnerStrict(workingRow)
@@ -462,11 +540,23 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
       if (!partner) return null;
 
       const partnerUserId = getUserId(partner);
+
+      // 2) Self-match guard
       if (partnerUserId && rowUserId && partnerUserId === rowUserId) {
         // Guard: never match a user to themselves
         return null;
       }
 
+      const allowStrictMix = 
+        isSubsetEitherWay(workingRow.topics, partner.topics) &&
+      (!REQUIRE_SAME_DIFFICULTY_FOR_STRICT_MIX || sameDifficulty(workingRow.difficulty, partner.difficulty));
+
+      // 3) Acceptance guard: non-strict anchor must not match a strict partner unless same topic and difficulty
+      if (partner.strict_mode && !workingRow.strict_mode && !allowStrictMix) {
+        return null;
+      }
+
+      // 4) Finalize match
       const pair = await MatchingRepo.markMatched(row.ticket_id, partner.ticket_id);
       if (!pair) return null;
 
@@ -477,8 +567,10 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
         fallbackKey: `${row.ticket_id}|${partner.ticket_id}`,
       });
 
+      const pairWithUsers = withUsers(pair, rowUserId, partnerUserId);
+
       const maybeSessioned = await enrichWithSessionIfConfigured({
-        ...pair,
+        ...pairWithUsers,
         ...(qid != null ? { question_id: qid } : {}),
       });
 
