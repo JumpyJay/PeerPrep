@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { io } from "socket.io-client";
-import "quill/dist/quill.snow.css";
-import type QuillType from "quill";
-import type { DeltaStatic, Sources } from "quill";
+import { io, Socket } from "socket.io-client";
+import * as monaco from "monaco-editor";
+
+// dynamically import Monaco editor
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 interface CodeEditorProps {
   sessionId: number;
@@ -18,6 +20,10 @@ interface TranslationResult {
   translatedCode: string;
   provider: string;
   cached: boolean;
+}
+
+interface CodePayload {
+  value?: string;
 }
 
 const defaultCode = `function twoSum(nums: number[], target: number): number[] {
@@ -33,26 +39,30 @@ const languageOptions = [
 ];
 
 export function CodeEditor({ sessionId }: CodeEditorProps) {
-  const quillRef = useRef<QuillType | null>(null);
-  const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const [connected, setConnected] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
 
   const [language, setLanguage] = useState("typescript");
   const [targetLanguage, setTargetLanguage] = useState(
-    languageOptions.find((option) => option.value !== "typescript")?.value ?? languageOptions[0].value
+    languageOptions.find((o) => o.value !== "typescript")?.value ?? languageOptions[0].value
   );
   const [translationStyle, setTranslationStyle] = useState<TranslationStyle>("idiomatic");
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translation, setTranslation] = useState<TranslationResult | null>(null);
 
-  const languageLabel = useMemo(() => {
-    return languageOptions.find((option) => option.value === language)?.label ?? language;
-  }, [language]);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof monaco | null>(null);
 
-  const targetLanguageLabel = useMemo(() => {
-    return languageOptions.find((option) => option.value === targetLanguage)?.label ?? targetLanguage;
-  }, [targetLanguage]);
+  const languageLabel = useMemo(
+    () => languageOptions.find((o) => o.value === language)?.label ?? language,
+    [language]
+  );
+
+  const targetLanguageLabel = useMemo(
+    () => languageOptions.find((o) => o.value === targetLanguage)?.label ?? targetLanguage,
+    [targetLanguage]
+  );
 
   useEffect(() => {
     const socket = io("http://localhost:3001");
@@ -63,14 +73,22 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       socket.emit("join-session", sessionId);
     };
 
-    const onDisconnect = () => {
-      setConnected(false);
-    };
+    const onDisconnect = () => setConnected(false);
 
-    const onReceiveCode = (payload: DeltaStatic) => {
-      const quill = quillRef.current;
-      if (!quill) return;
-      quill.updateContents(payload, "api");
+    const onReceiveCode = (payload: string | CodePayload) => {
+      if (!editorRef.current) return;
+      try {
+        const model = editorRef.current.getModel();
+        if (!model) return;
+
+        if (typeof payload === "string") {
+          model.setValue(payload);
+        } else if (payload.value) {
+          model.setValue(payload.value);
+        }
+      } catch (e) {
+        console.warn("Failed to apply remote code", e);
+      }
     };
 
     socket.on("connect", onConnect);
@@ -86,54 +104,33 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     };
   }, [sessionId]);
 
-  const wrapperRef = useCallback(
-    (wrapper: HTMLDivElement | null) => {
-      if (!wrapper) return;
-      if (typeof window === "undefined") return;
-      if (quillRef.current) return;
+  const handleEditorMount = useCallback(
+    (editor: monaco.editor.IStandaloneCodeEditor, monacoInstance: typeof monaco) => {
+      editorRef.current = editor;
+      monacoRef.current = monacoInstance;
 
-      (async () => {
-        const Quill = (await import("quill")).default;
-        const host = document.createElement("div");
-        wrapper.innerHTML = "";
-        wrapper.append(host);
+      const model = editor.getModel();
+      if (model && !model.getValue()) model.setValue(defaultCode);
 
-        const quill = new Quill(host, {
-          theme: "snow",
-          modules: { toolbar: false, history: { userOnly: true } },
-          placeholder: "Start solving…",
-        });
-        quill.root.setAttribute("spellcheck", "false");
-        quill.root.classList.add("font-mono");
-        quill.setText(defaultCode);
-
-        const onTextChange = (delta: DeltaStatic, _old: DeltaStatic, source: Sources) => {
-          if (source !== "user") return;
-          if (!socketRef.current || !connected) return;
-          const payload = { ops: delta.ops };
-          socketRef.current.emit("send-code", payload);
-        };
-
-        quill.on("text-change", onTextChange);
-        quillRef.current = quill;
-      })();
+      editor.onDidChangeModelContent(() => {
+        if (!socketRef.current || !connected) return;
+        socketRef.current.emit("send-code", { value: editor.getValue() });
+      });
     },
     [connected]
   );
 
-  const getCurrentCode = useCallback((): string => {
-    const quill = quillRef.current;
-    if (!quill) return "";
-    return quill.getText();
+  const getCurrentCode = useCallback(() => {
+    return editorRef.current?.getValue() ?? "";
   }, []);
 
   const handleReset = useCallback(() => {
-    quillRef.current?.setText(defaultCode);
+    if (editorRef.current) editorRef.current.setValue(defaultCode);
     setTranslation(null);
     setTranslationError(null);
   }, []);
 
-  async function handleTranslate() {
+  const handleTranslate = async () => {
     const currentCode = getCurrentCode().trim();
     if (!currentCode) {
       setTranslationError("Please provide some code to translate.");
@@ -146,6 +143,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
 
     setTranslationError(null);
     setIsTranslating(true);
+
     try {
       const response = await fetch("/api/v1/question/translate/ui", {
         method: "POST",
@@ -172,21 +170,21 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     } finally {
       setIsTranslating(false);
     }
-  }
+  };
 
-  async function handleCopyTranslation() {
+  const handleCopyTranslation = async () => {
     if (!translation?.translatedCode) return;
     try {
       await navigator.clipboard.writeText(translation.translatedCode);
     } catch {
       setTranslationError("Could not copy to clipboard. Please copy manually.");
     }
-  }
+  };
 
-  function handleReplaceEditor() {
+  const handleReplaceEditor = () => {
     if (!translation?.translatedCode) return;
-    quillRef.current?.setText(translation.translatedCode);
-  }
+    if (editorRef.current) editorRef.current.setValue(translation.translatedCode);
+  };
 
   return (
     <div className="flex w-1/2 flex-col">
@@ -194,7 +192,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
         <div className="flex items-center gap-2">
           <select
             value={language}
-            onChange={(event) => setLanguage(event.target.value)}
+            onChange={(e) => setLanguage(e.target.value)}
             className="rounded-md bg-secondary px-3 py-1.5 text-sm text-foreground outline-none hover:bg-secondary/80"
           >
             {languageOptions.map((option) => (
@@ -203,9 +201,11 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
               </option>
             ))}
           </select>
+
           <Button variant="ghost" onClick={handleReset}>
             Reset
           </Button>
+
           <span className={`text-xs ${connected ? "text-green-500" : "text-red-500"}`}>
             {connected ? "Connected" : "Disconnected"}
           </span>
@@ -215,7 +215,27 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       <div className="flex-1 overflow-y-auto bg-code-bg">
         <div className="flex h-full font-mono text-sm">
           <div className="flex-1 p-0">
-            <div ref={wrapperRef} className="quill-textarea h-full w-full" />
+            <MonacoEditor
+              height="420px"
+              defaultLanguage={language}
+              language={language}
+              defaultValue={defaultCode}
+              theme="vs"
+              onMount={handleEditorMount}
+              options={{
+                minimap: { enabled: false },
+                fontFamily: "Fira Code, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+                fontSize: 13,
+                tabSize: 2,
+                smoothScrolling: true,
+                autoClosingBrackets: "always",
+                autoClosingQuotes: "always",
+                automaticLayout: true,
+                formatOnPaste: true,
+                formatOnType: true,
+                quickSuggestions: true,
+              }}
+            />
           </div>
         </div>
       </div>
@@ -227,7 +247,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
               <span className="text-xs text-muted-foreground">Translate to</span>
               <select
                 value={targetLanguage}
-                onChange={(event) => setTargetLanguage(event.target.value)}
+                onChange={(e) => setTargetLanguage(e.target.value)}
                 className="rounded-md bg-secondary px-3 py-1.5 text-sm text-foreground outline-none hover:bg-secondary/80"
               >
                 {languageOptions.map((option) => (
@@ -237,11 +257,12 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
                 ))}
               </select>
             </div>
+
             <div className="flex flex-col gap-1 text-sm">
               <span className="text-xs text-muted-foreground">Style</span>
               <select
                 value={translationStyle}
-                onChange={(event) => setTranslationStyle(event.target.value as TranslationStyle)}
+                onChange={(e) => setTranslationStyle(e.target.value as TranslationStyle)}
                 className="rounded-md bg-secondary px-3 py-1.5 text-sm text-foreground outline-none hover:bg-secondary/80"
               >
                 <option value="idiomatic">Idiomatic</option>
@@ -249,6 +270,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
               </select>
             </div>
           </div>
+
           <Button onClick={handleTranslate} disabled={isTranslating} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {isTranslating ? "Translating..." : "Translate Code"}
           </Button>
