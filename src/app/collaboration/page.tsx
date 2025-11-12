@@ -11,11 +11,22 @@ import {
   DialogDescription,
   DialogHeader,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Toggle } from "@/components/ui/toggle";
 import getInitialsFromEmail from "@/lib/getInitials";
 import { Session } from "@/modules/collaboration/session.types";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Trash2 } from "lucide-react"; // Import Trash2
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -30,7 +41,34 @@ export default function CollaborationPage() {
   const [completeFilter, setCompleteFilter] = useState<string>("all");
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDeleteMode, setIsDeleteMode] = useState<boolean>(false); // State for delete toggle
   const router = useRouter();
+
+  const handleDeleteSession = async (sessionid: number) => {
+    try {
+      const response = await fetch(`/api/v1/collaboration?type=deletesession`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          session_id: sessionid,
+        }),
+      });
+
+      if (response.ok) {
+        console.log("session deleted!");
+        // update state to remove deleted session from UI
+        setSessions((prevSessions) =>
+          prevSessions.filter((session) => session.session_id !== sessionid)
+        );
+      } else {
+        console.error("Failed to delete session");
+      }
+    } catch (error) {
+      console.error("Error deleting session:", error);
+    }
+  };
 
   const handleSubmission = () => {
     console.log("questionID: ", questionID);
@@ -53,7 +91,7 @@ export default function CollaborationPage() {
   };
 
   // const fetchQuestionInfoFromID = (id: string) => {
-  //   // fetch question database and find one of matching id
+  // fetch question database and find one of matching id
   // };
 
   useEffect(() => {
@@ -111,6 +149,17 @@ export default function CollaborationPage() {
             </p>
           </header>
           <div className="flex space-x-1">
+            {/* --- NEW DELETE TOGGLE --- */}
+            <Toggle
+              size="sm"
+              pressed={isDeleteMode}
+              onPressedChange={setIsDeleteMode}
+              aria-label="Toggle delete mode"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Toggle>
+
+            {/* --- Filter Button --- */}
             <div>
               <Dialog open={openFilterModal} onOpenChange={setOpenFilterModal}>
                 <DialogTrigger asChild>
@@ -137,6 +186,8 @@ export default function CollaborationPage() {
                 </DialogContent>
               </Dialog>
             </div>
+
+            {/* --- Create Button --- */}
             <div>
               <Dialog open={openCreateModal} onOpenChange={setOpenCreateModal}>
                 <DialogTrigger asChild>
@@ -176,7 +227,7 @@ export default function CollaborationPage() {
 
         <ul className="space-y-4">
           {[...sessions]
-            .sort((a, b) => a.session_id - b.session_id) // sort ascending alphabetically
+            .sort((a, b) => a.session_id - b.session_id) // sort ascending by id
             .filter((session) => {
               switch (completeFilter) {
                 case "complete":
@@ -269,19 +320,55 @@ export default function CollaborationPage() {
                         </svg>
                       </div>
 
-                      {/* Navigation Arrow */}
-                      <h3
-                        onClick={() =>
-                          router.push(
-                            `collaboration/sessions/${session.session_id}`
-                          )
-                        }
-                      >
-                        <ArrowRight
-                          className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
-                          aria-label="View session details"
-                        />
-                      </h3>
+                      {/* --- CONDITIONAL ARROW/DELETE BUTTON --- */}
+                      {isDeleteMode ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              className="h-8 w-8" // Made slightly smaller
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. This will
+                                permanently delete the session (ID:{" "}
+                                {session.session_id}) for {session.user1_email}{" "}
+                                and {session.user2_email}.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() =>
+                                  handleDeleteSession(session.session_id)
+                                }
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <h3
+                          onClick={() =>
+                            router.push(
+                              `collaboration/sessions/${session.session_id}`
+                            )
+                          }
+                          className="cursor-pointer" // Added for better UX
+                        >
+                          <ArrowRight
+                            className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
+                            aria-label="View session details"
+                          />
+                        </h3>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -289,16 +376,17 @@ export default function CollaborationPage() {
             ))}
         </ul>
 
-        {sessions.length === 0 && (
-          <Card className="text-center p-12">
-            <CardTitle className="text-gray-700 dark:text-gray-300">
-              No Sessions
-            </CardTitle>
-            <CardDescription>
-              When a new session starts, it will appear here.
-            </CardDescription>
-          </Card>
-        )}
+        {sessions.length === 0 &&
+          !loading && ( // Added !loading check
+            <Card className="text-center p-12">
+              <CardTitle className="text-gray-700 dark:text-gray-300">
+                No Sessions
+              </CardTitle>
+              <CardDescription>
+                When a new session starts, it will appear here.
+              </CardDescription>
+            </Card>
+          )}
       </div>
     </div>
   );
