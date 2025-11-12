@@ -31,6 +31,8 @@ import { mapTicket, mapMatchResult } from "./matching.types";
 import { questionService } from "../question/question.service";
 import type { QuestionSelectionParams } from "../question/question.types";
 import { normalizeDifficulty, type Difficulty } from "./matching.utils";
+import { getProfileByEmail } from "../user/user.client";
+import { SkillLevel } from "./matching.types";
 
 /** Centralized knobs (document these in your design doc) */
 const CONFIG = {
@@ -45,9 +47,11 @@ const CONFIG = {
    * Thresholds live in repo; documented here for clarity.
    */
   doc_minTopicOverlapStrict: 0.6,
+
+  /** Grace period (seconds) to requeue partner after cancel. */
+  partnerRecoveryExtendSeconds: 180,
 };
 
-type EnqueueResult = { ticket: Ticket; existing: boolean};
   
 /**
  * Optional dependency: a function that creates collaboration sessions.
@@ -212,20 +216,44 @@ export const MatchingService = {
     return ticket;
   },
   
-  
-  async enqueueWithExisting(req: EnqueueRequest): Promise<EnqueueResult> {
+  async enqueueWithExisting(req: EnqueueRequest): Promise<{ ticket: Ticket; existing: boolean }> {
     const existing = await MatchingRepo.findActiveTicketByUser(req.userId);
     if (existing) return { ticket: mapTicket(existing), existing: true };
 
+    // 1) Pull user profile (visible proof in terminal)
+    try {
+      const profile = await getProfileByEmail(String(req.userId));
+      console.log("[MatchingService] fetched user profile:", profile);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn("[MatchingService] user fetch failed:", message);
+      console.warn("[MatchingService] proceeding with request payload only");
+    }
+
+    // 2) Resolve effective fields (keep it simple)
+    const effectiveDifficulty = normalizeDifficulty(req.difficulty ?? "EASY") ?? "EASY";
+    const effectiveTopics = Array.isArray(req.topics) ? req.topics : [];
+    const effectiveSkill = (req.skillLevel ?? "BEGINNER") as SkillLevel;
     const timeoutSeconds = req.timeoutSeconds ?? CONFIG.defaultTicketTimeoutSeconds;
-    const row: TicketDbRow = await MatchingRepo.createTicket({ 
+
+    console.log("[MatchingService] enqueue resolved:", {
       userId: req.userId,
-      difficulty: req.difficulty,
-      topics: req.topics,
-      skillLevel: req.skillLevel,
+      difficulty: effectiveDifficulty,
+      topics: effectiveTopics,
+      skillLevel: effectiveSkill,
+      strictMode: !!req.strictMode,
+      timeoutSeconds,
+    });
+
+    const row = await MatchingRepo.createTicket({
+      userId: req.userId,
+      difficulty: effectiveDifficulty,
+      topics: effectiveTopics,
+      skillLevel: effectiveSkill,
       strictMode: req.strictMode,
       timeoutSeconds,
-     });
+    });
+
     return { ticket: mapTicket(row), existing: false };
   },
 
@@ -283,7 +311,7 @@ export const MatchingService = {
   try {
     await MatchingRepo.cleanup(CONFIG.staleHeartbeatSeconds).catch(() => void 0);
 
-    const anchor = await MatchingRepo.loadAnchorForUpdate(ticketId);
+    const anchor = await MatchingRepo.loadAnchor(ticketId);
     if (!anchor || anchor.status !== "QUEUED") return null;
 
     const getUserId = (r: unknown): string | null => {
@@ -293,7 +321,7 @@ export const MatchingService = {
 
     const anchorUserId = getUserId(anchor);
 
-    // ⬇️ normalize difficulty into canonical "EASY" | "MEDIUM" | "HARD"
+    // normalize difficulty into canonical "EASY" | "MEDIUM" | "HARD"
     const rawDifficulty = isRecord(anchor) ? pickString(anchor, ["difficulty"]) : null;
     const difficulty: Difficulty | null = normalizeDifficulty(rawDifficulty);
 
@@ -301,9 +329,15 @@ export const MatchingService = {
       isRecord(anchor) && Array.isArray(anchor.topics) ? (anchor.topics as string[]) : [];
 
     // ---- STRICT MATCH PASS ------------------------------------------------
+    console.info("[match] try", { ticketId, mode: "strict" });
     {
       const partner = await MatchingRepo.findPartnerStrict(anchor);
       if (partner) {
+        console.info("[match] paired", {
+          mode: "strict",
+          anchor: anchor.ticket_id,
+          partner: partner.ticket_id,
+        })
         const partnerUserId = getUserId(partner);
         if (partnerUserId && partnerUserId === anchorUserId) {
           console.warn("[MatchingService] strict partner is same user, skipping");
@@ -329,9 +363,15 @@ export const MatchingService = {
     }
 
     // ---- FLEXIBLE MATCH PASS ----------------------------------------------
+    console.info("[match] try", { ticketId, mode: "flex" });
     {
       const partner = await MatchingRepo.findPartnerFlexible(anchor);
       if (partner) {
+        console.info("[match] paired", {
+          mode: "flex",
+          anchor: anchor.ticket_id,
+          partner: partner.ticket_id,
+        });
         const partnerUserId = getUserId(partner);
         if (partnerUserId && partnerUserId === anchorUserId) {
           console.warn("[MatchingService] flexible partner is same user, skipping");
@@ -458,6 +498,31 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
     const row = await MatchingRepo.getTicket(ticketId);
     return row ? mapTicket(row) : null;
   },
+
+  /** Cancel even if already MATCHED; re-queue the partner if applicable.
+   *  Returns a small payload so API can inform the UI.
+   */
+  async cancelRecover(ticketId: string): Promise<{
+    cancelled: boolean;
+    partnerRequeuedTicketId: string | null;
+  }> {
+    const { cancelled, partnerRequeued } =
+      await MatchingRepo.cancelWithPartnerRecovery(ticketId, {
+        partnerExtendSeconds: CONFIG.partnerRecoveryExtendSeconds ?? 180,
+      });
+
+    // Optional: immediately try to rematch the partner to reduce downtime.
+    if (partnerRequeued?.ticket_id) {
+      // Intentional fire-and-forget; swallow errors to keep DELETE fast.
+      void MatchingService.tryMatch(partnerRequeued.ticket_id).catch(() => undefined);
+    }
+
+    return {
+      cancelled: !!cancelled,
+      partnerRequeuedTicketId: partnerRequeued?.ticket_id ?? null,
+    };
+  },
+
 
   /**
    * ---------------------------------
