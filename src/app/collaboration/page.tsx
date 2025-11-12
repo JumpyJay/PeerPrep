@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Toggle } from "@/components/ui/toggle";
+import getInitialsFromEmail from "@/lib/getInitials";
 import { Session } from "@/modules/collaboration/session.types";
 import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -26,15 +27,10 @@ export default function CollaborationPage() {
   const [user2Email, setUser2Email] = useState<string>("");
   const [questionID, setQuestionID] = useState<number>(0);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [completeFilter, setCompleteFilter] = useState<string>("all");
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-
-  const getInitialsFromEmail = (email: string) => {
-    if (!email) return "?";
-    const username = email.split("@")[0];
-    return username.substring(0, 2).toUpperCase();
-  };
 
   const handleSubmission = () => {
     console.log("questionID: ", questionID);
@@ -128,7 +124,15 @@ export default function CollaborationPage() {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
-                    <Toggle>Completed</Toggle>
+                    <Toggle onClick={() => setCompleteFilter("complete")}>
+                      Completed
+                    </Toggle>
+                    <Toggle onClick={() => setCompleteFilter("incomplete")}>
+                      Not Completed
+                    </Toggle>
+                    <Toggle onClick={() => setCompleteFilter("all")}>
+                      All
+                    </Toggle>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -173,6 +177,20 @@ export default function CollaborationPage() {
         <ul className="space-y-4">
           {[...sessions]
             .sort((a, b) => a.session_id - b.session_id) // sort ascending alphabetically
+            .filter((session) => {
+              switch (completeFilter) {
+                case "complete":
+                  return session.is_completed === true;
+                case "incomplete":
+                  return session.is_completed === false;
+                case "all":
+                  return true;
+                default:
+                  throw new Error(
+                    `Invalid filterIsCompleted value: ${completeFilter}`
+                  );
+              }
+            })
             .map((session) => (
               <li key={session.session_id}>
                 <Card>

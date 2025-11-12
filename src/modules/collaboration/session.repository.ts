@@ -101,6 +101,29 @@ export class SessionRepository {
     }
   }
 
+  // define fetch submission function
+  // return all matching submission where user1_email or user2_email matches
+  public async findSubmissionByUser(user_email: string) {
+    if (!this.pool) {
+      this.pool = await getConnectionPool();
+    }
+    const client = await this.pool.connect();
+    try {
+      // retrieve submission
+      const submissionres = await client.query(
+        "SELECT * FROM submissions WHERE user1_email = $1 OR user2_email = $1",
+        [user_email]
+      );
+      // result.rows property contains the array of records from the database.
+      return submissionres.rows || [];
+    } catch (error) {
+      console.log("error during fetch submissions: ", error);
+      throw new Error("Could not fetch submissions.");
+    } finally {
+      client.release;
+    }
+  }
+
   public async createSubmission(session_id: string, code_solution: string) {
     if (!this.pool) {
       this.pool = await getConnectionPool();
@@ -116,7 +139,7 @@ export class SessionRepository {
       const { question_id, user1_email, user2_email } = inforesult.rows[0];
 
       const result = await client.query(
-        "INSERT INTO submissions (question_id, user1_email, user2_email, code_solution, session_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        "INSERT INTO submissions (question_id, user1_email, user2_email, users_solution, session_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
         [question_id, user1_email, user2_email, code_solution, session_id]
       );
       // result.rows property contains the array of records from the database.
@@ -126,6 +149,29 @@ export class SessionRepository {
       throw new Error("Could not terminate session.");
     } finally {
       // release the client back to the pool.
+      client.release();
+    }
+  }
+  
+  
+  // This function is for the "Refresh Button" logic.
+  // It only reads from the 'submissions' table and does not
+  // affect any other part of this file.
+  public async findAllSubmissions(): Promise<{ question_id: number, user1_email: string, user2_email: string }[]> {
+    if (!this.pool) {
+      this.pool = await getConnectionPool();
+    }
+    const client = await this.pool.connect();
+    try {
+      // Fetches the key info from every submission
+      const result = await client.query(
+        "SELECT question_id, user1_email, user2_email FROM submissions"
+      );
+      return result.rows;
+    } catch (error) {
+      console.error("Error fetching all submissions:", error);
+      throw new Error("Could not retrieve submissions.");
+    } finally {
       client.release();
     }
   }

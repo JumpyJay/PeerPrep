@@ -2,15 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { io } from "socket.io-client";
 import "quill/dist/quill.snow.css";
 import type QuillType from "quill";
-import type { DeltaStatic, Sources } from "quill";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface CodeEditorProps {
   sessionId: number;
 }
+
+interface TranslationResult {
+  translatedCode: string;
+  provider: string;
+  cached: boolean;
+}
+
+const defaultCode = ``;
 
 type TranslationStyle = "literal" | "idiomatic";
 
@@ -19,10 +28,6 @@ interface TranslationResult {
   provider: string;
   cached: boolean;
 }
-
-const defaultCode = `function twoSum(nums: number[], target: number): number[] {
-  // Write your solution here
-};`;
 
 const languageOptions = [
   { value: "typescript", label: "TypeScript" },
@@ -33,55 +38,100 @@ const languageOptions = [
 ];
 
 export function CodeEditor({ sessionId }: CodeEditorProps) {
+  const router = useRouter();
   const quillRef = useRef<QuillType | null>(null);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const [connected, setConnected] = useState(false);
 
   const [language, setLanguage] = useState("typescript");
   const [targetLanguage, setTargetLanguage] = useState(
-    languageOptions.find((option) => option.value !== "typescript")?.value ?? languageOptions[0].value
+    languageOptions.find((option) => option.value !== "typescript")?.value ??
+      languageOptions[0].value
   );
-  const [translationStyle, setTranslationStyle] = useState<TranslationStyle>("idiomatic");
+  const [translationStyle, setTranslationStyle] =
+    useState<TranslationStyle>("idiomatic");
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
-  const [translation, setTranslation] = useState<TranslationResult | null>(null);
+  const [translation, setTranslation] = useState<TranslationResult | null>(
+    null
+  );
 
   const languageLabel = useMemo(() => {
-    return languageOptions.find((option) => option.value === language)?.label ?? language;
+    return (
+      languageOptions.find((option) => option.value === language)?.label ??
+      language
+    );
   }, [language]);
 
   const targetLanguageLabel = useMemo(() => {
-    return languageOptions.find((option) => option.value === targetLanguage)?.label ?? targetLanguage;
+    return (
+      languageOptions.find((option) => option.value === targetLanguage)
+        ?.label ?? targetLanguage
+    );
   }, [targetLanguage]);
 
   useEffect(() => {
-    const socket = io("http://localhost:3001");
-    socketRef.current = socket;
+    const s = io("http://localhost:3001");
+    socketRef.current = s;
 
     const onConnect = () => {
       setConnected(true);
-      socket.emit("join-session", sessionId);
+      s.emit("join-session", sessionId);
     };
 
     const onDisconnect = () => {
       setConnected(false);
     };
 
-    const onReceiveCode = (payload: DeltaStatic) => {
-      const quill = quillRef.current;
-      if (!quill) return;
-      quill.updateContents(payload, "api");
+    const onReceiveCode = (payload: any) => {
+      const q = quillRef.current;
+      if (!q) return;
+      q.updateContents(payload, "api");
     };
 
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-    socket.on("receive-code", onReceiveCode);
+    const onPartnerDisconnect = () => {
+      // Show the toast
+      toast.warning(
+        "Partner disconnected, session will be terminated in 10 seconds."
+      );
+    };
+
+    const onTerminateSession = () => {
+      console.log("[socket] Session terminated by server.");
+
+      // Show the toast
+      toast.error(
+        "Session Terminated, You were the only one in the room for 10 seconds."
+      );
+
+      // Navigate to homepage
+      router.push("/");
+    };
+
+    const onCompleteSession = () => {
+      console.log("[socket] Session terminated by server.");
+
+      // Show the toast
+      toast.success("Session Completed!!");
+
+      // Navigate to homepage
+      router.push("/");
+    };
+
+    s.on("connect", onConnect);
+    s.on("disconnect", onDisconnect);
+    s.on("receive-code", onReceiveCode);
+    s.on("terminate-session", onTerminateSession);
+    s.on("partner-disconnect", onPartnerDisconnect);
+    s.on("complete-session", onCompleteSession);
 
     return () => {
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
-      socket.off("receive-code", onReceiveCode);
-      socket.disconnect();
+      s.off("connect", onConnect);
+      s.off("disconnect", onDisconnect);
+      s.off("receive-code", onReceiveCode);
+      s.off("terminate-session", onTerminateSession);
+      s.off("partner-disconnect", onPartnerDisconnect);
+      s.disconnect();
       socketRef.current = null;
     };
   }, [sessionId]);
@@ -107,7 +157,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
         quill.root.classList.add("font-mono");
         quill.setText(defaultCode);
 
-        const onTextChange = (delta: DeltaStatic, _old: DeltaStatic, source: Sources) => {
+        const onTextChange = (delta: any, _old: any, source: string) => {
           if (source !== "user") return;
           if (!socketRef.current || !connected) return;
           const payload = { ops: delta.ops };
@@ -159,14 +209,21 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(payload?.error ?? "Translation failed. Please try again.");
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(
+          payload?.error ?? "Translation failed. Please try again."
+        );
       }
 
       const payload = (await response.json()) as TranslationResult;
       setTranslation(payload);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to translate right now.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to translate right now.";
       setTranslationError(message);
       setTranslation(null);
     } finally {
@@ -188,6 +245,14 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     quillRef.current?.setText(translation.translatedCode);
   }
 
+  // define function for submit code
+  const handleSubmitCode = () => {
+    console.log("[socket] Submitting code.");
+    if (!socketRef.current || !connected) return;
+    const code = quillRef.current?.getText() ?? "";
+    socketRef.current.emit("submit-code", sessionId, code);
+  };
+
   return (
     <div className="flex w-1/2 flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
@@ -206,7 +271,11 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
           <Button variant="ghost" onClick={handleReset}>
             Reset
           </Button>
-          <span className={`text-xs ${connected ? "text-green-500" : "text-red-500"}`}>
+          <span
+            className={`text-xs ${
+              connected ? "text-green-500" : "text-red-500"
+            }`}
+          >
             {connected ? "Connected" : "Disconnected"}
           </span>
         </div>
@@ -224,14 +293,20 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex flex-col gap-1 text-sm">
-              <span className="text-xs text-muted-foreground">Translate to</span>
+              <span className="text-xs text-muted-foreground">
+                Translate to
+              </span>
               <select
                 value={targetLanguage}
                 onChange={(event) => setTargetLanguage(event.target.value)}
                 className="rounded-md bg-secondary px-3 py-1.5 text-sm text-foreground outline-none hover:bg-secondary/80"
               >
                 {languageOptions.map((option) => (
-                  <option key={option.value} value={option.value} disabled={option.value === language}>
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.value === language}
+                  >
                     {option.label}
                   </option>
                 ))}
@@ -241,7 +316,9 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
               <span className="text-xs text-muted-foreground">Style</span>
               <select
                 value={translationStyle}
-                onChange={(event) => setTranslationStyle(event.target.value as TranslationStyle)}
+                onChange={(event) =>
+                  setTranslationStyle(event.target.value as TranslationStyle)
+                }
                 className="rounded-md bg-secondary px-3 py-1.5 text-sm text-foreground outline-none hover:bg-secondary/80"
               >
                 <option value="idiomatic">Idiomatic</option>
@@ -249,11 +326,17 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
               </select>
             </div>
           </div>
-          <Button onClick={handleTranslate} disabled={isTranslating} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button
+            onClick={handleTranslate}
+            disabled={isTranslating}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
             {isTranslating ? "Translating..." : "Translate Code"}
           </Button>
         </div>
-        {translationError && <p className="mt-2 text-sm text-destructive">{translationError}</p>}
+        {translationError && (
+          <p className="mt-2 text-sm text-destructive">{translationError}</p>
+        )}
       </div>
 
       {translation && (
@@ -265,10 +348,18 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
                 {translation.cached ? ", cached" : ""})
               </p>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={handleCopyTranslation}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCopyTranslation}
+                >
                   Copy
                 </Button>
-                <Button variant="secondary" size="sm" onClick={handleReplaceEditor}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleReplaceEditor}
+                >
                   Replace Editor
                 </Button>
               </div>
@@ -302,7 +393,9 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
           <TabsContent value="testcase" className="h-40 overflow-y-auto p-4">
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">nums =</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  nums =
+                </label>
                 <input
                   type="text"
                   defaultValue="[2,7,11,15]"
@@ -310,7 +403,9 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">target =</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  target =
+                </label>
                 <input
                   type="text"
                   defaultValue="9"
@@ -321,13 +416,20 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
           </TabsContent>
 
           <TabsContent value="result" className="h-40 overflow-y-auto p-4">
-            <p className="text-sm text-muted-foreground">Run your code to see results...</p>
+            <p className="text-sm text-muted-foreground">
+              Run your code to see results...
+            </p>
           </TabsContent>
         </Tabs>
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <Button className="bg-primary text-primary-foreground hover:bg-primary/90">Submit</Button>
+        <Button
+          className="bg-primary text-primary-foreground hover:bg-primary/90"
+          onClick={() => handleSubmitCode()}
+        >
+          Submit
+        </Button>
       </div>
     </div>
   );

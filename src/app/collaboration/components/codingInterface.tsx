@@ -22,11 +22,6 @@ export function CodingInterface(params: CodingInterfaceProps) {
           </Link>
           <h3>{"sessionId" + params.sessionId}</h3>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            Sign In
-          </button>
-        </div>
       </header>
 
       {/* Main Content */}
