@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { handleLogout } from "@/lib/logoutHelper";
 import Link from "next/link";
 
 interface User {
@@ -81,7 +80,7 @@ export default function ProfilePage() {
       {/* Profile content */}
       <div className="max-w-md mx-auto mt-8 bg-white rounded-xl p-6 shadow-lg">
         {user && (
-          <div className="flex flex-col items-center space-y-4 mb-6">
+          <div className="flex flex-col items-center space-y-6">
             {/* Avatar */}
             <div className="w-24 h-24 rounded-full bg-black text-white flex items-center justify-center text-3xl font-bold">
               {user.username.charAt(0).toUpperCase()}
@@ -101,29 +100,15 @@ export default function ProfilePage() {
                   {new Date(user.created_at).toLocaleDateString()}
                 </div>
               )}
-              <div>
-                {/* Placeholder for level */}
-                <strong>Level:</strong> 42
-              </div>
             </div>
 
-            {/* Buttons */}
-            <div className="flex flex-col space-y-3 w-full mt-4">
-              {/* Placeholder for buttons */}
-              <button className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition">
-                Change Username
-              </button>
-              <button className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition">
-                Change Password
-              </button>
-              {/* Logout button */}
-              <button
-                onClick={handleLogout}
-                className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition"
-              >
-                Logout
-              </button>
-            </div>
+            {/* Edit Profile Button */}
+            <Link
+              href="/user/profile/edit"
+              className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition text-center"
+            >
+              Edit Profile
+            </Link>
           </div>
         )}
       </div>
