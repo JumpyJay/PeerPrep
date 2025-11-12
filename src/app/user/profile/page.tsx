@@ -7,6 +7,13 @@ interface User {
   username: string;
   email: string;
   created_at?: string;
+  elo: number;
+  ranking: string | null;
+  wins: number;
+  losses: number;
+  draws: number;
+  totalMatches: number;
+  winRate: number;
 }
 
 export default function ProfilePage() {
@@ -61,7 +68,7 @@ export default function ProfilePage() {
     );
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-16">
       {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-7xl px-6 py-4">
@@ -78,28 +85,69 @@ export default function ProfilePage() {
       </header>
 
       {/* Profile content */}
-      <div className="max-w-md mx-auto mt-8 bg-white rounded-xl p-6 shadow-lg">
+      <div className="max-w-3xl mx-auto mt-8 bg-white rounded-xl p-4 shadow-lg">
         {user && (
-          <div className="flex flex-col items-center space-y-6">
+          <div className="flex flex-col items-center space-y-4">
             {/* Avatar */}
-            <div className="w-24 h-24 rounded-full bg-black text-white flex items-center justify-center text-3xl font-bold">
+            <div className="w-16 h-16 rounded-full bg-black text-white flex items-center justify-center text-2xl font-bold">
               {user.username.charAt(0).toUpperCase()}
             </div>
 
-            {/* User Details */}
-            <div className="space-y-2 text-center">
-              <div>
-                <strong>Username:</strong> {user.username}
-              </div>
-              <div>
-                <strong>Email:</strong> {user.email}
-              </div>
-              {user.created_at && (
+            {/* Two column container */}
+            <div className="flex w-full space-x-6 py-4">
+              {/* User Info */}
+              <div className="flex-1 space-y-1 text-left">
+                <h3 className="font-bold text-lg">Personal</h3>
                 <div>
-                  <strong>Joined:</strong>{" "}
-                  {new Date(user.created_at).toLocaleDateString()}
+                  <strong>Username:</strong> {user.username}
                 </div>
-              )}
+                <div>
+                  <strong>Email:</strong> {user.email}
+                </div>
+                {user.created_at && (
+                  <div>
+                    <strong>Joined:</strong>{" "}
+                    {new Date(user.created_at).toLocaleDateString(
+                      "en-US", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      }
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div className="w-px bg-gray-300" />
+
+              {/* Ranking Info */}
+              <div className="flex-1 space-y-1 text-left">
+                <h3 className="font-bold text-lg">Ranking</h3>
+                <div>
+                  <strong>Rank:</strong> {user.ranking || "Unranked"}
+                </div>
+                <div>
+                  <strong>ELO rating:</strong> {user.elo || 0}
+                </div>
+                <div>
+                  <strong>Wins:</strong> {user.wins || 0}
+                </div>
+                <div>
+                  <strong>Losses:</strong> {user.losses || 0}
+                </div>
+                <div>
+                  <strong>Draws:</strong> {user.draws || 0}
+
+                </div>
+                <div>
+                  <strong>Total Number of Submissions:</strong>{" "}
+                  {user.totalMatches || 0}
+                </div>
+                <div>
+                  <strong>Win Rate:</strong> {user.winRate || 0}%
+                </div>
+              </div>
             </div>
 
             {/* Edit Profile Button */}
