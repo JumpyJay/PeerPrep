@@ -52,7 +52,90 @@ const CONFIG = {
   partnerRecoveryExtendSeconds: 180,
 };
 
-  
+type PairWithUsers = PairDbRow & { user_id_a: string; user_id_b: string };
+
+function withUsers(pair: PairDbRow, a: string | null, b: string | null): PairWithUsers {
+  // if user ids are missing, fall back to ticket ids so collab can still proceed
+  const userA = a ?? pair.ticket_id_a; 
+  const userB = b ?? pair.ticket_id_b;
+  return { ...pair, user_id_a: userA, user_id_b: userB };
+}
+
+function explodeTopics(input: unknown): string[] {
+  // Accept string or string[]
+  const raw: string[] = Array.isArray(input) ? input.map(String) : (typeof input === "string" ? [input] : []);
+  const out: string[] = [];
+  for (const item of raw) {
+    // split on commas/semicolons/pipes
+    const parts = item.split(/[,\|;]+/);
+    for (const p of parts) {
+      const t = p.trim().toLowerCase();
+      if (t) out.push(t);
+    }
+  }
+  // de-dup
+  return Array.from(new Set(out));
+}
+
+/**
+ * topicOverlap()
+ * ------------------------------------------
+ * Compute Jaccard similarity between two topic lists.
+ * Returns a value between 0 and 1:
+ *  - 1.0 → identical sets
+ *  - 0.0 → no overlap
+ */
+function topicOverlap(a: unknown, b: unknown): number {
+  const A = new Set(explodeTopics(a));
+  const B = new Set(explodeTopics(b));
+  if (A.size === 0 && B.size === 0) return 1;
+  if (A.size === 0 || B.size === 0) return 0;
+
+  let intersection = 0;
+  for (const t of A) if (B.has(t)) intersection++;
+  const union = new Set([...A, ...B]).size;
+
+  return intersection / union;
+}
+
+/**
+ * topicDistance()
+ * ------------------------------------------
+ * Convert topic overlap into a distance metric.
+ * Returns 0 for identical sets and 1 for completely different sets.
+ */
+function topicDistance(a: unknown, b: unknown): number {
+  return 1 - topicOverlap(a, b);
+}
+
+
+const REQUIRE_SAME_DIFFICULTY_FOR_STRICT_MIX = true; // flip to false if you don’t want this
+
+function topicSet(a: unknown): Set<string> { return new Set(explodeTopics(a)); }
+
+/** 
+function isSameSet(a: unknown, b: unknown): boolean {
+  const A = topicSet(a), B = topicSet(b);
+  if (A.size !== B.size) return false;
+  for (const t of A) if (!B.has(t)) return false;
+  return true;
+}
+*/
+
+function isSubsetEitherWay(a: unknown, b: unknown): boolean {
+  const A = topicSet(a), B = topicSet(b);
+  const A_in_B = [...A].every(t => B.has(t));
+  const B_in_A = [...B].every(t => A.has(t));
+  return A_in_B || B_in_A;
+}
+
+function sameDifficulty(a: unknown, b: unknown): boolean {
+  const A = typeof a === "string" ? normalizeDifficulty(a) : null;
+  const B = typeof b === "string" ? normalizeDifficulty(b) : null;
+  return !!A && !!B && A === B;
+}
+
+
 /**
  * Optional dependency: a function that creates collaboration sessions.
  * Injected from API layer to avoid coupling (and circular imports).
@@ -290,118 +373,138 @@ export const MatchingService = {
   },
 
   /**
-   * -------------------------------------------
-   * tryMatch()
-   * -------------------------------------------
-   * Attempt to find a partner for a given ticket.
-   *
-   * Strategy:
-   *  1. Load the anchor ticket (the one initiating the match)
-   *  2. Try strict matching first (exact difficulty + skill + topic coverage)
-   *  3. If none found, try flexible matching (best score by distance)
-   *
-   * Returns:
-   *  - MatchResult -> if a pair was formed
-   *  - null        -> if no partner found yet
-   *
-   * Throws:
-   *  - Error -> if repository or logic fails (bubbled up to route.ts for 500)
-   */
-  async tryMatch(ticketId: string): Promise<MatchResult | null> {
+ * -------------------------------------------
+ * tryMatch()
+ * -------------------------------------------
+ * Attempt to find a partner for a given ticket.
+ *
+ * Strategy:
+ *  1. Load the anchor ticket (the one initiating the match)
+ *  2. Try strict matching first (exact difficulty + skill + topic coverage)
+ *  3. If none found, try flexible matching (best score by distance)
+ *
+ * Returns:
+ *  - MatchResult -> if a pair was formed
+ *  - null        -> if no partner found yet
+ *
+ * Throws:
+ *  - Error -> if repository or logic fails (bubbled up to route.ts for 500)
+ */
+async tryMatch(ticketId: string): Promise<MatchResult | null> {
   try {
     await MatchingRepo.cleanup(CONFIG.staleHeartbeatSeconds).catch(() => void 0);
 
-    const anchor = await MatchingRepo.loadAnchor(ticketId);
-    if (!anchor || anchor.status !== "QUEUED") return null;
+    const anchorRow = await MatchingRepo.loadAnchor(ticketId);
+    if (!anchorRow || anchorRow.status !== "QUEUED") return null;
 
-    const getUserId = (r: unknown): string | null => {
-      if (!isRecord(r)) return null;
-      return pickString(r, ["user_id", "userId", "user"]);
-    };
+    const getUserId = (r: unknown): string | null =>
+      isRecord(r) ? pickString(r as Record<string, unknown>, ["user_id", "userId", "user"]) : null;
 
-    const anchorUserId = getUserId(anchor);
-
-    // normalize difficulty into canonical "EASY" | "MEDIUM" | "HARD"
-    const rawDifficulty = isRecord(anchor) ? pickString(anchor, ["difficulty"]) : null;
+    const anchorUserId = getUserId(anchorRow);
+    const rawDifficulty = pickString(anchorRow as unknown as Record<string, unknown>, ["difficulty"]);
     const difficulty: Difficulty | null = normalizeDifficulty(rawDifficulty);
+    const topics: string[] = Array.isArray(anchorRow.topics) ? anchorRow.topics : [];
 
-    const topics: string[] =
-      isRecord(anchor) && Array.isArray(anchor.topics) ? (anchor.topics as string[]) : [];
+    const accepts = (a: TicketDbRow, b: TicketDbRow): boolean => {
+    if (a.strict_mode) {
+      // strict: same difficulty AND subset either way on topics
+      if (!sameDifficulty(a.difficulty, b.difficulty)) return false;
+      if (!isSubsetEitherWay(a.topics, b.topics)) return false;
+      if (a.skill_level !== b.skill_level) return false; // keep skill match for strict
+      return true;
+    }
 
-    // ---- STRICT MATCH PASS ------------------------------------------------
-    console.info("[match] try", { ticketId, mode: "strict" });
+    // non-strict: still require same difficulty overall
+    if (!sameDifficulty(a.difficulty, b.difficulty)) return false;
+    return true;
+  };
+
+
+    // ---------- STRICT PASS ----------
     {
-      const partner = await MatchingRepo.findPartnerStrict(anchor);
-      if (partner) {
-        console.info("[match] paired", {
-          mode: "strict",
-          anchor: anchor.ticket_id,
-          partner: partner.ticket_id,
-        })
-        const partnerUserId = getUserId(partner);
-        if (partnerUserId && partnerUserId === anchorUserId) {
-          console.warn("[MatchingService] strict partner is same user, skipping");
-        } else {
-          const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
-          if (!pair) return null;
+      const candidates = await MatchingRepo.findPartnerStrictMany(anchorRow, 10);
 
-          const qid = await pickQuestionForPair({
-            difficulty,
-            topics,
-            users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
-            fallbackKey: `${anchor.ticket_id}|${partner.ticket_id}`,
-          });
+      for (const cand of candidates) {
+        const partnerUserId = getUserId(cand);
+        if (partnerUserId && anchorUserId && partnerUserId === anchorUserId) continue;
 
-          const maybeSessioned = await enrichWithSessionIfConfigured({
-            ...pair,
-            ...(qid != null ? { question_id: qid } : {}),
-          });
+        if (!isSubsetEitherWay(anchorRow.topics, cand.topics)) continue;
+        if (cand.skill_level !== anchorRow.skill_level) continue;
+        if (!accepts(anchorRow, cand)) continue;
 
-          return mapMatchResult(maybeSessioned);
-        }
+        const pair = await MatchingRepo.markMatched(anchorRow.ticket_id, cand.ticket_id);
+        if (!pair) continue;
+
+        const qid = await pickQuestionForPair({
+          difficulty,
+          topics,
+          users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
+          fallbackKey: `${anchorRow.ticket_id}|${cand.ticket_id}`,
+        });
+
+        const pairWithUsers = withUsers(pair, anchorUserId, partnerUserId);
+        const maybeSessioned = await enrichWithSessionIfConfigured({
+          ...pairWithUsers,
+          ...(qid != null ? { question_id: qid } : {}),
+        });
+
+        return mapMatchResult(maybeSessioned);
       }
     }
 
-    // ---- FLEXIBLE MATCH PASS ----------------------------------------------
-    console.info("[match] try", { ticketId, mode: "flex" });
+    // Strict anchors don’t fall back to flex
+    if (anchorRow.strict_mode) return null;
+
+    // ---------- FLEX PASS ----------
     {
-      const partner = await MatchingRepo.findPartnerFlexible(anchor);
-      if (partner) {
-        console.info("[match] paired", {
-          mode: "flex",
-          anchor: anchor.ticket_id,
-          partner: partner.ticket_id,
+      const candidates = await MatchingRepo.findPartnerFlexibleMany(anchorRow, 20);
+      const aTopics = explodeTopics(anchorRow.topics ?? []);
+      const ignoreTopics = !!anchorRow.relax_topics;
+      const relaxSkill = !!anchorRow.relax_skill;
+
+      const scored = candidates
+        .map((r) => {
+          const cTopics = explodeTopics(r.topics ?? []);
+          const coverage = ignoreTopics ? 1 : 1 - topicDistance(aTopics, cTopics);
+          const topicComponent = ignoreTopics ? 0.5 : 1 - coverage;
+          const skillPenalty = relaxSkill && r.skill_level !== anchorRow.skill_level ? 0.2 : 0;
+          return { r, score: topicComponent + skillPenalty };
+        })
+        .sort((a, b) => a.score - b.score);
+
+      for (const { r } of scored) {
+        const partnerUserId = getUserId(r);
+        if (partnerUserId && anchorUserId && partnerUserId === anchorUserId) continue;
+        if (!accepts(anchorRow, r)) continue;
+
+        const pair = await MatchingRepo.markMatched(anchorRow.ticket_id, r.ticket_id);
+        if (!pair) continue;
+
+        const qid = await pickQuestionForPair({
+          difficulty,
+          topics,
+          users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
+          fallbackKey: `${anchorRow.ticket_id}|${r.ticket_id}`,
         });
-        const partnerUserId = getUserId(partner);
-        if (partnerUserId && partnerUserId === anchorUserId) {
-          console.warn("[MatchingService] flexible partner is same user, skipping");
-        } else {
-          const pair = await MatchingRepo.markMatched(anchor.ticket_id, partner.ticket_id);
-          if (!pair) return null;
 
-          const qid = await pickQuestionForPair({
-            difficulty,
-            topics,
-            users: [anchorUserId ?? "", partnerUserId ?? ""].filter(Boolean),
-            fallbackKey: `${anchor.ticket_id}|${partner.ticket_id}`,
-          });
+        const pairWithUsers = withUsers(pair, anchorUserId, partnerUserId);
+        const maybeSessioned = await enrichWithSessionIfConfigured({
+          ...pairWithUsers,
+          ...(qid != null ? { question_id: qid } : {}),
+        });
 
-          const maybeSessioned = await enrichWithSessionIfConfigured({
-            ...pair,
-            ...(qid != null ? { question_id: qid } : {}),
-          });
-
-          return mapMatchResult(maybeSessioned);
-        }
+        return mapMatchResult(maybeSessioned);
       }
     }
 
     return null;
-  } catch (e: unknown) {
+  } catch (e) {
     console.error("[MatchingService.tryMatch] failed for ticket:", ticketId, e);
     throw e;
   }
 },
+
+
 
   /**
    * ------------------------------------------
@@ -418,7 +521,6 @@ export const MatchingService = {
    *  - MatchResult -> if matched after relaxation
    *  - null        -> if still unmatched
    */
-  // (place these tiny helpers near the top of the file once, if not already present)
 async relax(req: RelaxRequest): Promise<MatchResult | null> {
   try {
     const extendSeconds = req.extendSeconds ?? CONFIG.defaultTicketTimeoutSeconds;
@@ -454,36 +556,60 @@ async relax(req: RelaxRequest): Promise<MatchResult | null> {
 
     // attempt helper (strict | flex)
     const attempt = async (mode: "strict" | "flex") => {
-      const partner =
-        mode === "strict"
-          ? await MatchingRepo.findPartnerStrict(workingRow)
-          : await MatchingRepo.findPartnerFlexible(workingRow);
+  if (mode === "flex" && workingRow.strict_mode) return null;
 
-      if (!partner) return null;
+  const candidates: TicketDbRow[] =
+    mode === "strict"
+      ? await MatchingRepo.findPartnerStrictMany(workingRow, 10)
+      : await MatchingRepo.findPartnerFlexibleMany(workingRow, 20);
 
-      const partnerUserId = getUserId(partner);
-      if (partnerUserId && rowUserId && partnerUserId === rowUserId) {
-        // Guard: never match a user to themselves
-        return null;
-      }
+  // For FLEX we can optionally re-score like tryMatch; for STRICT we use FIFO order
+  const scored: Array<{ r: TicketDbRow; score: number }> =
+    mode === "flex"
+      ? candidates.map((r) => {
+          const aTopics = explodeTopics(workingRow.topics ?? []);
+          const cTopics = explodeTopics(r.topics ?? []);
+          const ignoreTopics = !!workingRow.relax_topics;
+          const relaxSkill = !!workingRow.relax_skill;
+          const coverage = ignoreTopics ? 1 : 1 - topicDistance(aTopics, cTopics);
+          const topicComponent = ignoreTopics ? 0.5 : 1 - coverage;
+          const skillPenalty = relaxSkill && r.skill_level !== workingRow.skill_level ? 0.2 : 0;
+          return { r, score: topicComponent + skillPenalty };
+        }).sort((a, b) => a.score - b.score)
+      : candidates.map((r, i) => ({ r, score: i })); // FIFO
 
-      const pair = await MatchingRepo.markMatched(row.ticket_id, partner.ticket_id);
-      if (!pair) return null;
+  for (const { r: partner } of scored) {
+    const partnerUserId = getUserId(partner);
+    if (partnerUserId && rowUserId && partnerUserId === rowUserId) continue;
 
-      const qid = await pickQuestionForPair({
-        difficulty,
-        topics,
-        users: [rowUserId ?? "", partnerUserId ?? ""].filter(Boolean),
-        fallbackKey: `${row.ticket_id}|${partner.ticket_id}`,
-      });
+    const allowStrictMix =
+      isSubsetEitherWay(workingRow.topics, partner.topics) &&
+      (!REQUIRE_SAME_DIFFICULTY_FOR_STRICT_MIX ||
+        sameDifficulty(workingRow.difficulty, partner.difficulty));
 
-      const maybeSessioned = await enrichWithSessionIfConfigured({
-        ...pair,
-        ...(qid != null ? { question_id: qid } : {}),
-      });
+    if (partner.strict_mode && !workingRow.strict_mode && !allowStrictMix) continue;
 
-      return mapMatchResult(maybeSessioned);
-    };
+    const pair = await MatchingRepo.markMatched(row.ticket_id, partner.ticket_id);
+    if (!pair) continue;
+
+    const qid = await pickQuestionForPair({
+      difficulty,
+      topics,
+      users: [rowUserId ?? "", partnerUserId ?? ""].filter(Boolean),
+      fallbackKey: `${row.ticket_id}|${partner.ticket_id}`,
+    });
+
+    const pairWithUsers = withUsers(pair, rowUserId, partnerUserId);
+    const maybeSessioned = await enrichWithSessionIfConfigured({
+      ...pairWithUsers,
+      ...(qid != null ? { question_id: qid } : {}),
+    });
+
+    return mapMatchResult(maybeSessioned);
+  }
+
+  return null;
+};
 
     return preferFlexibleFirst
       ? (await attempt("flex")) ?? (await attempt("strict"))

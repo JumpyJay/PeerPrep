@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const cookie = req.headers.get("cookie");
   const token = cookie
     ?.split(";")
-    .find(c => c.trim().startsWith("token="))
+    .find((c) => c.trim().startsWith("token="))
     ?.split("=")[1];
 
   if (!token) {
@@ -17,15 +17,18 @@ export async function GET(req: Request) {
   try {
     // decode JWT to extract email  
     const payload = decodeJwtPayload(token);
-    const email = payload.id || payload.email;
+    if (!payload) {
+      return NextResponse.json({ message: "Invalid or expired token" }, { status: 401 });
+    }
 
-    if (!email) {
+    const rawEmail = payload.id || payload.email;
+    if (!rawEmail) {
       return NextResponse.json({ message: "Invalid token" }, { status: 401 });
     }
 
-    // fetch basic user information 
-    const user = await userService.getProfile(email);
+    const email = String(rawEmail);
 
+    const user = await userService.getProfile(email);
     if (!user) {
       return NextResponse.json({ message: "User not found" }, { status: 404 });
     }
