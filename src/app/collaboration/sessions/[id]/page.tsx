@@ -16,7 +16,6 @@ export default function CollaborationPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = Number(params.id);
-  if (Number.isNaN(sessionId)) return null;
   const [userEmail, setUserEmail] = useState<string>("");
   const [session, setSession] = useState<Session>();
   const [question, setQuestion] = useState<Question>();
