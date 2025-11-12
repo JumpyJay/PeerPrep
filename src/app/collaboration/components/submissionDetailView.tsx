@@ -95,7 +95,7 @@ export default function SubmissionDetailsView({
 
         {/* right column */}
         <div className="flex flex-col space-y-4 overflow-y-auto">
-          <h3 className="text-lg font-semibold">Their Solution</h3>
+          <h3 className="text-lg font-semibold">Submitted Solution</h3>
           <div className="bg-gray-900 dark:bg-gray-800 rounded-md p-4 flex-1">
             <pre className="text-sm text-gray-100 whitespace-pre-wrap">
               <code>{submission.users_solution}</code>

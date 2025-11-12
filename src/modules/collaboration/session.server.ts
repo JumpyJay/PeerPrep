@@ -85,6 +85,15 @@ io.on("connection", (socket: Socket) => {
     socket.join(room);
     currentSessionId = String(sessionId);
     console.log(`[socket] ${socket.id} joined room ${room}`);
+    // emit to partner that user connected
+    // find the room this socket is in but must not be socket id
+    const curRoom = Array.from(socket.rooms).find((r) => r !== socket.id);
+    if (curRoom) {
+      // broadcast change only to respective room
+      socket.to(curRoom).emit("partner-connect");
+    } else {
+      console.warn(`error: no room found for socket ${socket.id}`);
+    }
 
     // check room state
 
