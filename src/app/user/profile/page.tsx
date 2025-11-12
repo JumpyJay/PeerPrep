@@ -42,7 +42,9 @@ export default function ProfilePage() {
 
   if (loading)
     return (
-      <div className="flex justify-center items-center h-screen">Loading...</div>
+      <div className="flex justify-center items-center h-screen">
+        Loading...
+      </div>
     );
 
   if (error)
@@ -101,14 +103,14 @@ export default function ProfilePage() {
 
             {/* Buttons */}
             <div className="flex flex-col space-y-3 w-full mt-4">
-              { /* Placeholder for buttons */ }
+              {/* Placeholder for buttons */}
               <button className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition">
                 Change Username
               </button>
               <button className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition">
                 Change Password
               </button>
-              { /* Logout button */ }
+              {/* Logout button */}
               <button
                 onClick={handleLogout}
                 className="w-full bg-black text-white py-2 rounded-lg hover:opacity-80 transition"
