@@ -96,6 +96,10 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       );
     };
 
+    const onPartnerConnect = () => {
+      toast.success("Partner connected!");
+    };
+
     const onTerminateSession = () => {
       console.log("[socket] Session terminated by server.");
 
@@ -109,7 +113,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     };
 
     const onCompleteSession = () => {
-      console.log("[socket] Session terminated by server.");
+      console.log("[socket] Session completed by server.");
 
       // Show the toast
       toast.success("Session Completed!!");
@@ -124,6 +128,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     s.on("terminate-session", onTerminateSession);
     s.on("partner-disconnect", onPartnerDisconnect);
     s.on("complete-session", onCompleteSession);
+    s.on("partner-connect", onPartnerConnect);
 
     return () => {
       s.off("connect", onConnect);
@@ -131,6 +136,8 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       s.off("receive-code", onReceiveCode);
       s.off("terminate-session", onTerminateSession);
       s.off("partner-disconnect", onPartnerDisconnect);
+      s.off("complete-session", onCompleteSession);
+      s.off("partner-connect", onPartnerConnect);
       s.disconnect();
       socketRef.current = null;
     };
@@ -250,7 +257,15 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     console.log("[socket] Submitting code.");
     if (!socketRef.current || !connected) return;
     const code = quillRef.current?.getText() ?? "";
-    socketRef.current.emit("submit-code", sessionId, code);
+    socketRef.current.emit("submit-code", String(sessionId), code);
+  };
+
+  // define function for handle end session
+  const handleEndSession = () => {
+    console.log("[socket] End session.");
+
+    // navigate to homepage
+    router.push("/");
   };
 
   return (
@@ -279,6 +294,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
             {connected ? "Connected" : "Disconnected"}
           </span>
         </div>
+        <Button onClick={() => handleEndSession()}>End Session</Button>
       </div>
 
       <div className="flex-1 overflow-y-auto bg-code-bg">
@@ -289,7 +305,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
         </div>
       </div>
 
-      <div className="border-t border-border px-4 py-3">
+      <div className="border-t border-border px-4 pt-3 pb-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex flex-col gap-1 text-sm">
@@ -326,13 +342,21 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
               </select>
             </div>
           </div>
-          <Button
-            onClick={handleTranslate}
-            disabled={isTranslating}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            {isTranslating ? "Translating..." : "Translate Code"}
-          </Button>
+          <div className="space-x-1">
+            <Button
+              onClick={handleTranslate}
+              disabled={isTranslating}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {isTranslating ? "Translating..." : "Translate Code"}
+            </Button>
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => handleSubmitCode()}
+            >
+              Submit
+            </Button>
+          </div>
         </div>
         {translationError && (
           <p className="mt-2 text-sm text-destructive">{translationError}</p>
@@ -372,65 +396,6 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
           </div>
         </div>
       )}
-
-      <div className="border-t border-border">
-        <Tabs defaultValue="testcase" className="flex flex-col">
-          <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent px-4">
-            <TabsTrigger
-              value="testcase"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
-            >
-              Testcase
-            </TabsTrigger>
-            <TabsTrigger
-              value="result"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
-            >
-              Test Result
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="testcase" className="h-40 overflow-y-auto p-4">
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  nums =
-                </label>
-                <input
-                  type="text"
-                  defaultValue="[2,7,11,15]"
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  target =
-                </label>
-                <input
-                  type="text"
-                  defaultValue="9"
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-                />
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="result" className="h-40 overflow-y-auto p-4">
-            <p className="text-sm text-muted-foreground">
-              Run your code to see results...
-            </p>
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <Button
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-          onClick={() => handleSubmitCode()}
-        >
-          Submit
-        </Button>
-      </div>
     </div>
   );
 }
