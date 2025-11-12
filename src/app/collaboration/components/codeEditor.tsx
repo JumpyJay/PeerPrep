@@ -100,8 +100,31 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       toast.success("Partner connected!");
     };
 
-    const onTerminateSession = () => {
+    const onTerminateSession = async () => {
       console.log("[socket] Session terminated by server.");
+      // call collaboration service to delete the session
+      try {
+        const response = await fetch(
+          "/api/v1/collaboration?type=deletesession",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              session_id: sessionId,
+            }),
+          }
+        );
+
+        if (response.ok) {
+          console.log("session deleted!");
+        } else {
+          console.error("Failed to delete session");
+        }
+      } catch (error) {
+        console.error("Error deleting session:", error);
+      }
 
       // Show the toast
       toast.error(
@@ -122,6 +145,28 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       router.push("/");
     };
 
+    const getFullCode = (requesterSocketId: string) => {
+      console.log("Client: Received request for full code.");
+      const quill = quillRef.current;
+      if (!quill) return;
+      // get the full text contents of the editor
+      const fullCode = quill.getText();
+      // send back to server
+      s.emit("send-full-code", {
+        code: fullCode,
+        targetSocketId: requesterSocketId,
+      });
+    };
+
+    const receiveFullCode = (fullCode: any) => {
+      console.log("Client: Received full code, setting editor content.");
+      console.log("full code: ", fullCode);
+      // sync editor content
+      const quill = quillRef.current;
+      if (!quill) return;
+      quill.setText(String(fullCode));
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("receive-code", onReceiveCode);
@@ -129,6 +174,8 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     s.on("partner-disconnect", onPartnerDisconnect);
     s.on("complete-session", onCompleteSession);
     s.on("partner-connect", onPartnerConnect);
+    s.on("get-full-code", getFullCode);
+    s.on("receive-full-code", receiveFullCode);
 
     return () => {
       s.off("connect", onConnect);

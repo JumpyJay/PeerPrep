@@ -85,6 +85,18 @@ io.on("connection", (socket: Socket) => {
     socket.join(room);
     currentSessionId = String(sessionId);
     console.log(`[socket] ${socket.id} joined room ${room}`);
+
+    const currentRoom = io.sockets.adapter.rooms.get(room);
+    const numClients = currentRoom ? currentRoom.size : 0;
+
+    if (numClients > 1) {
+      // this socket (socket.id) is the new client
+      // Ask OTHERS to send their code
+      // pass socket's ID so others know who to send to
+      console.log(`[server] Requesting full code for new client ${socket.id}`);
+      socket.to(room).emit("get-full-code", socket.id);
+    }
+
     // emit to partner that user connected
     // find the room this socket is in but must not be socket id
     const curRoom = Array.from(socket.rooms).find((r) => r !== socket.id);
@@ -150,6 +162,15 @@ io.on("connection", (socket: Socket) => {
       console.warn(`[socket] ${socket.id} sent code but is not in a room.`);
     }
   });
+
+  socket.on(
+    "send-full-code",
+    ({ code, targetSocketId }: { code: CodeDelta; targetSocketId: string }) => {
+      // send the code to the socket that requested it
+      console.log(`[server] Relaying full code to ${targetSocketId}`);
+      io.to(targetSocketId).emit("receive-full-code", code);
+    }
+  );
 
   socket.on("disconnect", () => {
     if (currentSessionId && !completedSessions.has(currentSessionId)) {
