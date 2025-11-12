@@ -78,17 +78,6 @@ function explodeTopics(input: unknown): string[] {
 }
 
 /**
- * Compute minimum topic overlap ratio (0–1) for strict matching.
- * Users with fewer topics require higher overlap.
- */
-function strictOverlapThresholdFor(topicCount: number): number {
-  if (topicCount <= 1) return 1.0;
-  if (topicCount === 2) return 0.7;
-  if (topicCount === 3) return 0.6;
-  return 0.5;
-}
-
-/**
  * topicOverlap()
  * ------------------------------------------
  * Compute Jaccard similarity between two topic lists.
@@ -124,12 +113,14 @@ const REQUIRE_SAME_DIFFICULTY_FOR_STRICT_MIX = true; // flip to false if you don
 
 function topicSet(a: unknown): Set<string> { return new Set(explodeTopics(a)); }
 
+/** 
 function isSameSet(a: unknown, b: unknown): boolean {
   const A = topicSet(a), B = topicSet(b);
   if (A.size !== B.size) return false;
   for (const t of A) if (!B.has(t)) return false;
   return true;
 }
+*/
 
 function isSubsetEitherWay(a: unknown, b: unknown): boolean {
   const A = topicSet(a), B = topicSet(b);

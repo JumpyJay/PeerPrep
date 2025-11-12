@@ -106,11 +106,6 @@ function topicDistance(a: string[], b: string[]): number {
   return 1 - overlap; // 0 = perfect match, 1 = no overlap
 }
 
-const sameDiff = (a: unknown, b: unknown) =>
-  typeof a === "string" && typeof b === "string"
-    ? a.toUpperCase() === b.toUpperCase()
-    : false;
-
 function topicsSubsetEitherWay(a: unknown, b: unknown): boolean {
   const A = new Set(explodeTopics(a));
   const B = new Set(explodeTopics(b));
