@@ -34,7 +34,7 @@ yarn-error.log*
 *.env
 
 # key files
-*.json
+peerprep*.json
 
 # vercel
 .vercel
