@@ -1,3 +1,5 @@
+// /src/app/collaboration/session/[id]/page.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,6 +10,7 @@ import { Question } from "@/modules/question/question.types";
 import Cookies from "js-cookie";
 import { toast } from "sonner";
 import { decodeJwtPayload } from "@/lib/decodeJWT";
+import { ChatPanel } from "./ChatPanel";
 
 export default function CollaborationPage() {
   const params = useParams();
@@ -136,14 +139,24 @@ export default function CollaborationPage() {
   }, [userEmail, session]);
 
   return (
-    <div>
-      {question && session && (
-        <CodingInterface
-          sessionId={sessionId}
-          question={question}
-          attempts={attempts}
-        />
-      )}
-    </div>
-  );
-}
+    <div className="h-screen flex">
+      {/* coding UI */}
+      <div className="flex-1 min-w-0">
+        {question && session && (
+          <CodingInterface sessionId={sessionId} question={question} />
+        )}
+      </div>
+
+      {/* Right column: Chat*/}
+      {session && (
+        <div className="w-[22rem] min-w-[18rem] max-w-[26rem] border-l border-border md:w-[24rem]">
+          {(() => {
+            const rawToken = Cookies.get("token");
+            const payload = rawToken ? decodeJwtPayload(rawToken) : null;
+            const me = (payload?.email || payload?.id || "me@example.com").toString();
+            return <ChatPanel sessionId={sessionId} me={me} />;
+          })()}
+      </div>
+    )}
+  </div>
+)};
