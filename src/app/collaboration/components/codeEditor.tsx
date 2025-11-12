@@ -5,12 +5,20 @@ import { Button } from "@/components/ui/button";
 import { io } from "socket.io-client";
 import "quill/dist/quill.snow.css";
 import type QuillType from "quill";
-import type { Delta } from "quill";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
+import * as monaco from "monaco-editor";
+
+// dynamically import Monaco editor
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 interface CodeEditorProps {
   sessionId: number;
+}
+
+interface CodePayload {
+  value: string;
 }
 
 const defaultCode = ``;
@@ -36,6 +44,8 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
   const quillRef = useRef<QuillType | null>(null);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const [connected, setConnected] = useState(false);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof monaco | null>(null);
 
   const [language, setLanguage] = useState("typescript");
   const [targetLanguage, setTargetLanguage] = useState(
@@ -77,10 +87,16 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       setConnected(false);
     };
 
-    const onReceiveCode = (payload: Delta) => {
-      const q = quillRef.current;
-      if (!q) return;
-      q.updateContents(payload, "api");
+    const onReceiveCode = (payload: string | CodePayload ) => {
+      if (!editorRef.current) return;
+      const model = editorRef.current.getModel();
+      if (!model) return;
+
+      if (typeof payload === "string") {
+        model.setValue(payload);
+      } else if (payload.value) {
+        model.setValue(payload.value);
+      }
     };
 
     const onPartnerDisconnect = () => {
@@ -140,25 +156,15 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     };
 
     const getFullCode = (requesterSocketId: string) => {
-      console.log("Client: Received request for full code.");
-      const quill = quillRef.current;
-      if (!quill) return;
-      // get the full text contents of the editor
-      const fullCode = quill.getText();
-      // send back to server
-      s.emit("send-full-code", {
-        code: fullCode,
-        targetSocketId: requesterSocketId,
-      });
+      if (!editorRef.current) return;
+      const code = editorRef.current.getValue();
+      s.emit("send-full-code", { code, targetSocketId: requesterSocketId });
     };
 
     const receiveFullCode = (fullCode: string) => {
-      console.log("Client: Received full code, setting editor content.");
-      console.log("full code: ", fullCode);
-      // sync editor content
-      const quill = quillRef.current;
-      if (!quill) return;
-      quill.setText(String(fullCode));
+      if (!editorRef.current) return;
+      const model = editorRef.current.getModel();
+      if (model) model.setValue(fullCode);
     };
 
     s.on("connect", onConnect);
@@ -184,52 +190,40 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     };
   }, [sessionId, router]);
 
-  const wrapperRef = useCallback(
-    (wrapper: HTMLDivElement | null) => {
-      if (!wrapper) return;
-      if (typeof window === "undefined") return;
-      if (quillRef.current) return;
+  const handleEditorMount = useCallback(
+    (editor: monaco.editor.IStandaloneCodeEditor, monacoInstance: typeof monaco) => {
+      editorRef.current = editor;
+      monacoRef.current = monacoInstance;
 
-      (async () => {
-        const Quill = (await import("quill")).default;
-        const host = document.createElement("div");
-        wrapper.innerHTML = "";
-        wrapper.append(host);
+      // initialize default content
+      const model = editor.getModel();
+      const initialValue = defaultCode.trim()
+        ? defaultCode
+        : "// Start solving…";
+      if (model && !model.getValue()) model.setValue(initialValue);
 
-        const quill = new Quill(host, {
-          theme: "snow",
-          modules: { toolbar: false, history: { userOnly: true } },
-          placeholder: "Start solving…",
-        });
-        quill.root.setAttribute("spellcheck", "false");
-        quill.root.classList.add("font-mono");
-        quill.setText(defaultCode);
-
-        const onTextChange = (delta: Delta, _old: Delta, source: string) => {
-          if (source !== "user") return;
-          if (!socketRef.current || !connected) return;
-          const payload = { ops: delta.ops };
-          socketRef.current.emit("send-code", payload);
-        };
-
-        quill.on("text-change", onTextChange);
-        quillRef.current = quill;
-      })();
+      // detect user changes and send to socket
+      editor.onDidChangeModelContent(() => {
+        if (!socketRef.current || !connected) return;
+        socketRef.current.emit("send-code", { value: editor.getValue() });
+      });
     },
     [connected]
   );
 
-  const getCurrentCode = useCallback((): string => {
-    const quill = quillRef.current;
-    if (!quill) return "";
-    return quill.getText();
-  }, []);
+  const getCurrentCode = useCallback(() => editorRef.current?.getValue() ?? "", []);
 
   const handleReset = useCallback(() => {
-    quillRef.current?.setText(defaultCode);
+    editorRef.current?.setValue(defaultCode);
     setTranslation(null);
     setTranslationError(null);
   }, []);
+
+  const handleReplaceEditor = () => {
+    if (translation?.translatedCode && editorRef.current) {
+      editorRef.current.setValue(translation.translatedCode);
+    }
+  };
 
   async function handleTranslate() {
     const currentCode = getCurrentCode().trim();
@@ -288,11 +282,6 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     }
   }
 
-  function handleReplaceEditor() {
-    if (!translation?.translatedCode) return;
-    quillRef.current?.setText(translation.translatedCode);
-  }
-
   // define function for submit code
   const handleSubmitCode = () => {
     console.log("[socket] Submitting code.");
@@ -341,7 +330,29 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       <div className="flex-1 min-h-0 overflow-auto bg-code-bg">
         <div className="flex h-full font-mono text-sm">
           <div className="flex-1 p-0">
-            <div ref={wrapperRef} className="quill-textarea h-full w-full min-h-0" />
+            <div className="flex-1 min-h-0 overflow-auto bg-code-bg">
+              <MonacoEditor
+                height="420px"
+                defaultLanguage={language}
+                language={language}
+                defaultValue={defaultCode}
+                theme="vs"
+                onMount={handleEditorMount}
+                options={{
+                  minimap: { enabled: false },
+                  fontFamily: "Fira Code, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+                  fontSize: 13,
+                  tabSize: 2,
+                  smoothScrolling: true,
+                  autoClosingBrackets: "always",
+                  autoClosingQuotes: "always",
+                  automaticLayout: true,
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  quickSuggestions: true,
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>
