@@ -159,7 +159,6 @@ export const RankingRepository = {
              rank,
              wins,
              losses,
-             draws,
              RANK() OVER (ORDER BY elo DESC) as global_rank_position
            FROM user_ranking
          )

@@ -11,8 +11,6 @@ export const userService = {
   register,
   login,
   getProfile,
-  updateUsername,
-  updatePassword
 };
 
 /**
@@ -83,51 +81,5 @@ export async function getProfile(email: string) {
     };
   } catch (err: unknown) {
     throw new Error("Internal Server Error");
-  }
-}
-
-/**
- * Updates username.
- */
-export async function updateUsername(email: string, newUsername: string) {
-  try {
-    const existingUser = await userRepository.findUserByUsername(newUsername);
-
-    // blocks if another existing user has this username
-    if (existingUser && existingUser.email !== email) {
-      return { success: false, status: 409, message: "Username already exists" };
-    }
-
-    const updated = await userRepository.updateUsernameByEmail(email, newUsername);
-    if (!updated) {
-      return { success: false, status: 404, message: "User not found" };
-    }
-
-    return { success: true, status: 200, message: "Username updated", username: newUsername };
-  } catch (err) {
-    if (err instanceof DatabaseError && err.code === "23505") {
-      return { success: false, status: 409, message: "Username already exists" };
-    }
-    console.error("Error updating username:", err);
-    return { success: false, status: 500, message: "Internal Server Error" };
-  }
-}
-
-/**
- * Updates password.
- */
-export async function updatePassword(email: string, newPassword: string) {
-  try {
-    const hashed = await bcrypt.hash(newPassword, 10);
-    const updated = await userRepository.updatePasswordByEmail(email, hashed);
-
-    if (!updated) {
-      return { success: false, status: 404, message: "User not found" };
-    }
-
-    return { success: true, status: 200, message: "Password updated successfully" };
-  } catch (err) {
-    console.error("Error updating password:", err);
-    return { success: false, status: 500, message: "Internal Server Error" };
   }
 }
