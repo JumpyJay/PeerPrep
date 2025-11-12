@@ -13,7 +13,7 @@ export default function CollaborationPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = Number(params.id);
-  const [userEmail, setUserEmail] = useState<String>("");
+  const [userEmail, setUserEmail] = useState<string>("");
   const [session, setSession] = useState<Session>();
   const [question, setQuestion] = useState<Question>();
   const [attempts, setAttempts] = useState<Submission[]>([]);
@@ -102,7 +102,7 @@ export default function CollaborationPage() {
       fetchQuestion();
     }
     // this effect depends on session state
-  }, [session]);
+  }, [session, router]);
 
   useEffect(() => {
     // define a function to fetch attempt history

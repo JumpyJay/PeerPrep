@@ -1,12 +1,19 @@
-'use client';
+"use client";
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from "react";
 // 1. Make sure Card, CardHeader, CardTitle, CardContent are imported
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 // --- Data Shape ---
 interface RankEntry {
@@ -24,10 +31,10 @@ export default function RankingTestPage() {
   const [leaderboard, setLeaderboard] = useState<RankEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  const [searchUsername, setSearchUsername] = useState(''); 
-  const [searchedUser, setSearchedUser] = useState<RankEntry | null>(null); 
-  const [isSearching, setIsSearching] = useState(false); 
+
+  const [searchUsername, setSearchUsername] = useState("");
+  const [searchedUser, setSearchedUser] = useState<RankEntry | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   // --- 2. ADD NEW STATE FOR THE REFRESH BUTTON ---
@@ -39,9 +46,9 @@ export default function RankingTestPage() {
     setIsLoading(true); // Show loading spinner
     setError(null);
     try {
-      const res = await fetch('/api/v1/ranking/leaderboard?limit=50');
+      const res = await fetch("/api/v1/ranking/leaderboard?limit=50");
       if (!res.ok) {
-        throw new Error('Failed to fetch leaderboard data.');
+        throw new Error("Failed to fetch leaderboard data.");
       }
       const data = await res.json();
       setLeaderboard(data); // Store the fetched data in our state
@@ -49,7 +56,7 @@ export default function RankingTestPage() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('An unknown error occurred');
+        setError("An unknown error occurred");
       }
     } finally {
       setIsLoading(false); // Hide loading spinner
@@ -63,53 +70,56 @@ export default function RankingTestPage() {
 
   // --- 5. Handle User Search (Unchanged) ---
   const handleSearch = async (e: FormEvent) => {
-    e.preventDefault(); 
-    if (!searchUsername) return; 
+    e.preventDefault();
+    if (!searchUsername) return;
 
-    setIsSearching(true); 
+    setIsSearching(true);
     setSearchError(null);
-    setSearchedUser(null); 
+    setSearchedUser(null);
     try {
       const res = await fetch(`/api/v1/ranking/user/${searchUsername}`);
       if (!res.ok) {
-        throw new Error(res.status === 404 ? 'User not found.' : 'Search failed.');
+        throw new Error(
+          res.status === 404 ? "User not found." : "Search failed."
+        );
       }
       const data = await res.json();
-      setSearchedUser(data); 
+      setSearchedUser(data);
     } catch (err) {
       if (err instanceof Error) {
         setSearchError(err.message);
       } else {
-        setSearchError('An unknown error occurred');
+        setSearchError("An unknown error occurred");
       }
     } finally {
-      setIsSearching(false); 
+      setIsSearching(false);
     }
   };
-  
+
   // --- 6. ADD NEW FUNCTION FOR THE REFRESH BUTTON ---
   const handleRefresh = async () => {
     setIsRefreshing(true);
     setRefreshMessage("Recalculating... this may take a moment.");
     try {
-      const res = await fetch('/api/v1/ranking/recalculate', {
-        method: 'POST',
+      const res = await fetch("/api/v1/ranking/recalculate", {
+        method: "POST",
       });
       if (!res.ok) {
         const body = await res.json();
-        throw new Error(body.error || 'Failed to start recalculation.');
+        throw new Error(body.error || "Failed to start recalculation.");
       }
       const result = await res.json();
-      setRefreshMessage(`Success! ${result.submissionsProcessed} submissions processed.`);
-      
+      setRefreshMessage(
+        `Success! ${result.submissionsProcessed} submissions processed.`
+      );
+
       // After recalculation, automatically refresh the leaderboard
       await fetchLeaderboard();
-
     } catch (err) {
       if (err instanceof Error) {
         setRefreshMessage(`Error: ${err.message}`);
       } else {
-        setRefreshMessage('An unknown error occurred');
+        setRefreshMessage("An unknown error occurred");
       }
     } finally {
       setIsRefreshing(false);
@@ -120,7 +130,6 @@ export default function RankingTestPage() {
   return (
     <main className="flex min-h-screen flex-col items-center p-8 bg-gray-50">
       <div className="w-full max-w-4xl space-y-8">
-        
         {/* --- 8. THIS IS THE MISSING CARD --- */}
         <Card>
           <CardHeader>
@@ -132,12 +141,13 @@ export default function RankingTestPage() {
                 {isRefreshing ? "Refreshing..." : "Refresh All Rankings"}
               </Button>
               <p className="text-sm text-muted-foreground">
-                {refreshMessage || "Recalculate all user scores from the submissions table."}
+                {refreshMessage ||
+                  "Recalculate all user scores from the submissions table."}
               </p>
             </div>
           </CardContent>
         </Card>
-        
+
         {/* Section 1: User Search Card (Unchanged) */}
         <Card>
           <CardHeader>
@@ -152,7 +162,7 @@ export default function RankingTestPage() {
                 disabled={isSearching}
               />
               <Button type="submit" disabled={isSearching}>
-                {isSearching ? 'Searching...' : 'Search'}
+                {isSearching ? "Searching..." : "Search"}
               </Button>
             </form>
             {searchError && (
@@ -163,7 +173,9 @@ export default function RankingTestPage() {
                 <h3 className="font-semibold">{searchedUser.username}</h3>
                 <p>Rank: {searchedUser.global_rank_position}</p>
                 <p>Rating: {searchedUser.elo.toFixed(0)}</p>
-                <p>Tier: <Badge>{searchedUser.rank}</Badge></p>
+                <p>
+                  Tier: <Badge>{searchedUser.rank}</Badge>
+                </p>
               </div>
             )}
           </CardContent>
@@ -177,7 +189,7 @@ export default function RankingTestPage() {
           <CardContent>
             {isLoading && <p className="text-center">Loading leaderboard...</p>}
             {error && <p className="text-center text-red-600">{error}</p>}
-            
+
             {!isLoading && !error && (
               <Table>
                 <TableHeader>
@@ -210,7 +222,7 @@ export default function RankingTestPage() {
                 </TableBody>
               </Table>
             )}
-            
+
             {!isLoading && !error && leaderboard.length === 0 && (
               <p className="text-center pt-4 text-gray-500">
                 No ranking data found. Your service might be empty.

@@ -8,7 +8,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -67,8 +66,8 @@ export default function RecentSubmissionsTab() {
 
         const data: Submission[] = await response.json();
         setSubmissions(data);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch submissions");
+      } catch (error) {
+        console.log("error: ", error);
       } finally {
         setLoading(false);
       }

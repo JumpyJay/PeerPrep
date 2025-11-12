@@ -45,6 +45,7 @@
     "@types/lodash": "^4.17.20",
     "@types/node": "^20",
     "@types/pg": "^8.15.5",
+    "@types/quill": "^2.0.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "concurrently": "^9.2.1",

@@ -5,18 +5,12 @@ import { Button } from "@/components/ui/button";
 import { io } from "socket.io-client";
 import "quill/dist/quill.snow.css";
 import type QuillType from "quill";
+import type { Delta } from "quill";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface CodeEditorProps {
   sessionId: number;
-}
-
-interface TranslationResult {
-  translatedCode: string;
-  provider: string;
-  cached: boolean;
 }
 
 const defaultCode = ``;
@@ -83,7 +77,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       setConnected(false);
     };
 
-    const onReceiveCode = (payload: any) => {
+    const onReceiveCode = (payload: Delta) => {
       const q = quillRef.current;
       if (!q) return;
       q.updateContents(payload, "api");
@@ -158,7 +152,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       });
     };
 
-    const receiveFullCode = (fullCode: any) => {
+    const receiveFullCode = (fullCode: string) => {
       console.log("Client: Received full code, setting editor content.");
       console.log("full code: ", fullCode);
       // sync editor content
@@ -188,7 +182,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       s.disconnect();
       socketRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, router]);
 
   const wrapperRef = useCallback(
     (wrapper: HTMLDivElement | null) => {
@@ -211,7 +205,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
         quill.root.classList.add("font-mono");
         quill.setText(defaultCode);
 
-        const onTextChange = (delta: any, _old: any, source: string) => {
+        const onTextChange = (delta: Delta, _old: Delta, source: string) => {
           if (source !== "user") return;
           if (!socketRef.current || !connected) return;
           const payload = { ops: delta.ops };

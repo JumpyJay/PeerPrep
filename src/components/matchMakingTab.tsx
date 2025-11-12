@@ -4,49 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import RecentSubmissionsTab from "./recentSubmissionsTab";
 
-const partnersAvailable = [
-  {
-    id: 1,
-    name: "Sarah Chen",
-    level: 38,
-    skillTags: ["Python", "Algorithms", "DP"],
-    recentProblem: "2-Sum",
-    difficulty: "Easy",
-    joinedAt: "2 mins ago",
-    avatar: "SC",
-  },
-  {
-    id: 2,
-    name: "Marcus Williams",
-    level: 42,
-    skillTags: ["JavaScript", "Arrays", "Strings"],
-    recentProblem: "Merge K Lists",
-    difficulty: "Hard",
-    joinedAt: "5 mins ago",
-    avatar: "MW",
-  },
-  {
-    id: 3,
-    name: "Priya Patel",
-    level: 35,
-    skillTags: ["Java", "Trees", "Graphs"],
-    recentProblem: "Binary Search Tree",
-    difficulty: "Medium",
-    joinedAt: "1 min ago",
-    avatar: "PP",
-  },
-  {
-    id: 4,
-    name: "James Rodriguez",
-    level: 40,
-    skillTags: ["C++", "Optimization", "System Design"],
-    recentProblem: "Longest Substring",
-    difficulty: "Medium",
-    joinedAt: "3 mins ago",
-    avatar: "JR",
-  },
-];
-
 const recentMatches = [
   {
     id: 1,

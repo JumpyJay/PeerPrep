@@ -4,7 +4,6 @@ import { CodeEditor } from "./codeEditor";
 import { Question } from "@/modules/question/question.types";
 import Link from "next/link";
 import { Submission } from "@/modules/collaboration/session.types";
-import { attempt } from "lodash";
 
 interface CodingInterfaceProps {
   sessionId: number;

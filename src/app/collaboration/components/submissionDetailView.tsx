@@ -35,8 +35,8 @@ export default function SubmissionDetailsView({
         const data = await res.json();
 
         setQuestion(data);
-      } catch (err: any) {
-        setError(err.message || "An unknown error occurred");
+      } catch (error) {
+        console.log("error: ", error);
       } finally {
         setIsLoading(false);
       }

@@ -1,12 +1,12 @@
 import bcrypt from "bcrypt"; // password hashing
 import jwt from "jsonwebtoken"; // create jwt tokens for auth
-import * as userRepository from "./user.repository"; 
+import * as userRepository from "./user.repository";
 import { UserCredentials, UserRegister } from "./user.types";
 import { DatabaseError } from "pg";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-// bundles functions for easy import 
+// bundles functions for easy import
 export const userService = {
   register,
   login,
@@ -25,22 +25,29 @@ export async function register(data: UserRegister) {
       password: hashed,
     });
 
-    return { success: true, status: 201, message: "User registered", user: newUser };
+    return {
+      success: true,
+      status: 201,
+      message: "User registered",
+      user: newUser,
+    };
   } catch (err: unknown) {
     // handle duplicate email
     if (err instanceof DatabaseError && err.code === "23505") {
-      return { success: false, status: 409, message: "Email already registered",
+      return {
+        success: false,
+        status: 409,
+        message: "Email already registered",
       };
     }
 
     // fallback for unknown errors
-    return { success: false, status: 500, message: "Internal Server Error",
-    };
+    return { success: false, status: 500, message: "Internal Server Error" };
   }
 }
 
 /**
- * Handles existing user log in. 
+ * Handles existing user log in.
  */
 export async function login(data: UserCredentials) {
   // checks if user exists in db using email checks
@@ -57,10 +64,16 @@ export async function login(data: UserCredentials) {
     return { success: false, status: 401, message: "Invalid password" };
   }
 
-  // creates signed token 
+  // creates signed token
   const token = jwt.sign({ id: user.email }, JWT_SECRET, { expiresIn: "1d" });
 
-  return { success: true, status: 200, message: "Login successful", token, user };
+  return {
+    success: true,
+    status: 200,
+    message: "Login successful",
+    token,
+    user,
+  };
 }
 
 /**
@@ -70,7 +83,8 @@ export async function getProfile(email: string) {
   try {
     const user = await userRepository.findUserByEmail(email);
 
-    if (!user) { // user not found
+    if (!user) {
+      // user not found
       return null;
     }
 
@@ -79,7 +93,7 @@ export async function getProfile(email: string) {
       email: user.email,
       created_at: user.created_at,
     };
-  } catch (err: unknown) {
-    throw new Error("Internal Server Error");
+  } catch (error) {
+    console.log("error: ", error);
   }
 }
