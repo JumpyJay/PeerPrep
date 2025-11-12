@@ -99,6 +99,34 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
     }
   }, [userId, userIdentifier]);
 
+  interface User {
+    username: string;
+    email: string;
+    created_at?: string;
+    elo: number;
+    ranking: string | null;
+    totalMatches: number;
+    winRate: number;
+  }
+
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        const res = await fetch("/api/v1/user/profile", { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch profile");
+        const data = await res.json();
+        setUser(data);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    fetchProfile();
+  }, []);
+
+
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
       case "Easy":
@@ -436,26 +464,26 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
           <h3 className="font-semibold text-foreground mb-4">Your Stats</h3>
           <div className="space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">
-                Problems Solved
+              <span className="text-sm font-bold text-muted-foreground">
+                Rank
               </span>
-              <span className="font-bold text-foreground">156</span>
+              <span className="font-semibold text-foreground">{user?.ranking || "Unranked"}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">
-                Collaborations
+              <span className="text-sm font-bold text-muted-foreground">
+                ELO rating
               </span>
-              <span className="font-bold text-foreground">42</span>
+              <span className="font-semibold text-foreground">{user?.elo || 0}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">
-                Success Rate
+              <span className="text-sm font-bold text-muted-foreground">
+                Total number of submissions
               </span>
-              <span className="font-bold text-green-400">87%</span>
+              <span className="font-semibold text-foreground">{user?.totalMatches || 0}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Avg Session</span>
-              <span className="font-bold text-foreground">32 mins</span>
+              <span className="text-sm font-bold text-muted-foreground">Win Rate</span>
+              <span className="font-semibold text-foreground">{user?.winRate || 0}%</span>
             </div>
           </div>
         </div>

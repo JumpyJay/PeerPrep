@@ -1,5 +1,4 @@
 import { getConnectionPool } from "@/lib/db";
-import { Pool } from "pg";
 import { RankingRepository } from "./ranking.repository";
 import { SessionCompletedEvent, SessionOutcome, UserRanking, QuestionSolvedEvent } from "./ranking.types"; // Correct types
 

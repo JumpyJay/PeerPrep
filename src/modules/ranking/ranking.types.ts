@@ -66,4 +66,5 @@ export interface LeaderboardEntry {
   global_rank_position: number;
   wins: number;
   losses: number;
+  draws: number;
 }
