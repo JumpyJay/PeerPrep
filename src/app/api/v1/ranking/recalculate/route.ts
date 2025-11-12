@@ -7,18 +7,17 @@ import { RankingService } from "@/modules/ranking/ranking.service";
  */
 export async function POST(request: NextRequest) {
   try {
-    console.log("API: Received request to recalculate all ranks.");
+    console.log("API: Received request to recalculate all ranks," + request);
     const result = await RankingService.recalculateAllRanks();
-    
-    if (result.status === 'error') {
+
+    if (result.status === "error") {
       throw new Error("Recalculation failed in service.");
     }
-    
-    return NextResponse.json({ 
-      message: "Recalculation complete.",
-      ...result 
-    });
 
+    return NextResponse.json({
+      message: "Recalculation complete.",
+      ...result,
+    });
   } catch (error) {
     console.error("Failed to recalculate ranks:", error);
     return NextResponse.json(

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { handleLogout } from "@/lib/logoutHelper";
+import Link from "next/link";
 
 interface User {
   username: string;

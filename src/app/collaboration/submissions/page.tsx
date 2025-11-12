@@ -65,8 +65,8 @@ export default function SubmissionPage() {
         const data: Submission[] = await response.json();
         console.log("submission data: ", data);
         setSubmissions(data);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch submissions");
+      } catch (error) {
+        console.log("error: ", error);
       } finally {
         setLoading(false);
       }
