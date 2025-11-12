@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { Server, Socket } from "socket.io";
 
 // define a type for the payload from Quill
@@ -5,9 +6,12 @@ interface CodeDelta {
   ops: unknown[];
 }
 
+const CORS_ORIGIN = process.env.WEBSOCKET_SERVER_CORS;
+console.log("My CORS Origin:", CORS_ORIGIN);
+
 const io = new Server(3001, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: process.env.WEBSOCKET_SERVER_CORS,
     methods: ["GET", "POST"],
   },
 });
