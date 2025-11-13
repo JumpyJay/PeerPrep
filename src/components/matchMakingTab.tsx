@@ -30,16 +30,11 @@ interface MatchmakingTabProps {
 }
 
 const difficultyOptions = ["Easy", "Medium", "Hard"];
-const skillOptions = [
-  { value: "BEGINNER", label: "Beginner" },
-  { value: "INTERMEDIATE", label: "Intermediate" },
-  { value: "ADVANCED", label: "Advanced" },
-];
 
 export function MatchmakingTab({ userId }: MatchmakingTabProps) {
   const [selectedDifficulty, setSelectedDifficulty] =
     useState<string>("Medium");
-  const [skillLevel, setSkillLevel] = useState<string>("INTERMEDIATE");
+  const skillLevel = "INTERMEDIATE"; // to be removed once backend is dealt with
   const [topicsInput, setTopicsInput] = useState<string>("Arrays, Hash Table");
   const [strictMode, setStrictMode] = useState(false);
   const [queueStatus, setQueueStatus] = useState<QueueStatus>("idle");
@@ -304,23 +299,7 @@ export function MatchmakingTab({ userId }: MatchmakingTabProps) {
             ))}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">
-                Skill level
-              </label>
-              <select
-                value={skillLevel}
-                onChange={(event) => setSkillLevel(event.target.value)}
-                className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-              >
-                {skillOptions.map((option) => (
-                  <option value={option.value} key={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <label className="flex items-center gap-2 text-sm text-foreground mt-6 md:mt-0">
+            <label className="flex items-center gap-2 text-sm text-foreground mt-0">
               <input
                 type="checkbox"
                 checked={strictMode}
