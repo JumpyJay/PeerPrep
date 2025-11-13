@@ -1,40 +1,8 @@
-# Welcome to PeerPrep 
-PeerPrep is a free platform to prepare for technical interviews
-for students, by students. It's a collaborative coding platform developed by G33 for CS3219 Software Engineering Principles and Patterns. 
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Features 
+## Getting Started
 
-PeerPrep has 4 main microservices: User, Question, Matching and Collaboration Service. Each service communicates via Next.js API routes and shares a PostgreSQL instance with service-specific schemas.
-
-Features of PeerPrep include:
-- Authentication - secure user login using JWT and bcrypt.
-- User Matching - pairs users based on question difficulty and topic selection. 
-- Question Management - retrieve coding problems by difficulty. 
-- Collaboration Room - real-time shared code editor powered by Socket.io and Quill.
-- Persistent Data - stored in PostgreSQL, ensuring ACID compliance.
-
-## Nice-to-have Features
-
-G33 has decided to take a deep dive into a single category for the N2H features. The category chosen is N1 Service Enhancements.
-
-N2H features include:
-
-- Code Translation - AI-powered code translation across TypeScript, JavaScript, Python, Java and C++.
-- Text Chat Integration - synchronized in-room chat for paired users.
-- Ranking System - elo-style scoring based on problem difficulty.
-- Attempt History - records user sessions and submissions.
-
-## Deployment link
-Access the app via the deployment links for the [web app](https://peerprepapp-483559310335.asia-east1.run.app/user) and the 
-[websocket server](https://peerprepserver-483559310335.asia-east1.run.app).
-
-## Running locally 
-
-First, run the command below to obtain a local copy of the repo.
-```bash
-git clone https://github.com/JumpyJay/PeerPrep.git
-```
-Then, run the development server:
+First, run the development server:
 
 ```bash
 npm run dev
@@ -46,45 +14,28 @@ pnpm dev
 bun dev
 ```
 
-Next, access [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## Tech Stack
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-| Category | Technologies |
-|-----------|---------------|
-| **Frontend** | Next.js 15 (React), Tailwind CSS |
-| **Backend** | TypeScript (Node.js), Next.js API Routes |
-| **Database** | PostgreSQL (Cloud SQL on GCP) |
-| **Collaboration** | Socket.io, Quill, Monaco Editor |
-| **Authentication** | JWT, bcrypt |
-| **DevOps** | Docker, Google Cloud Run, GitHub Actions (CI/CD) |
-| **Utilities** | ESLint, Turbopack |
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Documentation: Matching Algorithm Design
+## Learn More
 
-1. **Enqueue:**  
-   A user creates a ticket with `(difficulty, topics[], strict_mode)`.
+To learn more about Next.js, take a look at the following resources:
 
-2. **Try Match:**
-   - **Strict Pass:**  
-     - Same difficulty  
-     - Topic subset match (e.g. `[tree]` ↔ `[array, tree]`)  
-     - FIFO order (oldest first)
-   - **Flexible Pass:**  
-     - Same difficulty  
-     - Topics may differ
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-3. **Atomic Update:**  
-   Both tickets are atomically set to `MATCHED` using database transaction locks.
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-4. **Edge Cases Handled:**
-   - Self-matching prevented (same user / ticket)
-   - Handles `NULL` or empty topics gracefully
-   - Prevents duplicate pairing with DB transaction locks
-   - Strict-mode users only match with compatible strict-mode tickets
-   - Expired or timed-out tickets cleaned automatically
+## Deploy on Vercel
 
-## Documentation: Question Service Endpoints
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Question Service Endpoints
 
 - `GET /api/v1/question` — List all questions.
 - `GET /api/v1/question/[id]` — Get question by id.
@@ -114,34 +65,3 @@ CREATE TABLE IF NOT EXISTS question_served (
 );
 CREATE INDEX IF NOT EXISTS idx_question_served_user_time ON question_served (user_id, served_at DESC);
 ```
-
-## Documentation: Ranking System
-
-An **Elo-style ranking system** rewards users based on their coding activity and question difficulty.
-
-| Difficulty | Points |
-|-------------|---------|
-| Easy | +1 |
-| Medium | +2 |
-| Hard | +3 |
-
-**Rank Tiers:**
-- **Bronze**: 0–49  
-- **Silver**: 50–99  
-- **Gold**: 100–199  
-- **Platinum**: 200–299  
-- **Diamond**: 300+
-
-Rankings are updated manually via a “Refresh Leaderboard” feature, which updates the `user_ranking` table in the database based on submission records.
-
-## DevOps and Logging
-
-- **Containerization:** All services built with Docker  
-- **Deployment:** Hosted on Google Cloud Run  
-- **CI/CD:** Automated via GitHub Actions 
-- **Zero Downtime:** Rolling updates for seamless deployment  
-- **Logging:** Centralized with Google Cloud Logging
-- **Security:**  
-  - CORS restrictions to only allow PeerPrep client origin  
-  - Cloud Service Accounts manage access to Cloud SQL and Secret Manager  
-  - Environment variables stored securely in container configs  
