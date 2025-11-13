@@ -65,11 +65,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
   }, [targetLanguage]);
 
   useEffect(() => {
-    console.log(
-      "websocket url: ",
-      process.env.NEXT_PUBLIC_WEBSOCKET_SERVER_URL
-    );
-    const s = io(process.env.NEXT_PUBLIC_WEBSOCKET_SERVER_URL);
+    const s = io("https://peerprepserver-483559310335.asia-east1.run.app");
     socketRef.current = s;
 
     const onConnect = () => {
