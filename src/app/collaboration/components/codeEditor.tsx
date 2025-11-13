@@ -82,6 +82,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     };
 
     const onReceiveCode = (payload: Delta) => {
+      console.log("received code");
       const q = quillRef.current;
       if (!q) return;
       q.updateContents(payload, "api");
@@ -162,7 +163,7 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
       // sync editor content
       const quill = quillRef.current;
       if (!quill) return;
-      quill.setText(String(fullCode));
+      quill.setText(fullCode);
     };
 
     s.on("connect", onConnect);
@@ -188,40 +189,61 @@ export function CodeEditor({ sessionId }: CodeEditorProps) {
     };
   }, [sessionId, router]);
 
-  const wrapperRef = useCallback(
-    (wrapper: HTMLDivElement | null) => {
-      if (!wrapper) return;
-      if (typeof window === "undefined") return;
-      if (quillRef.current) return;
+  const wrapperRef = useCallback((wrapper: HTMLDivElement | null) => {
+    if (!wrapper) return;
+    if (typeof window === "undefined") return;
+    if (quillRef.current) return;
 
-      (async () => {
-        const Quill = (await import("quill")).default;
-        const host = document.createElement("div");
-        wrapper.innerHTML = "";
-        wrapper.append(host);
+    (async () => {
+      const Quill = (await import("quill")).default;
+      const host = document.createElement("div");
+      wrapper.innerHTML = "";
+      wrapper.append(host);
 
-        const quill = new Quill(host, {
-          theme: "snow",
-          modules: { toolbar: false, history: { userOnly: true } },
-          placeholder: "Start solving…",
-        });
-        quill.root.setAttribute("spellcheck", "false");
-        quill.root.classList.add("font-mono");
-        quill.setText(defaultCode);
+      const quill = new Quill(host, {
+        theme: "snow",
+        modules: { toolbar: false, history: { userOnly: true } },
+        placeholder: "Start solving…",
+      });
+      quill.root.setAttribute("spellcheck", "false");
+      quill.root.classList.add("font-mono");
+      quill.setText(defaultCode);
 
-        const onTextChange = (delta: Delta, _old: Delta, source: string) => {
-          if (source !== "user") return;
-          if (!socketRef.current || !connected) return;
-          const payload = { ops: delta.ops };
-          socketRef.current.emit("send-code", payload);
-        };
+      quillRef.current = quill;
+    })();
+  }, []);
+  useEffect(() => {
+    const quill = quillRef.current;
+    const socket = socketRef.current;
 
-        quill.on("text-change", onTextChange);
-        quillRef.current = quill;
-      })();
-    },
-    [connected]
-  );
+    // If Quill or the socket aren't initialized yet, do nothing.
+    // This effect will run again when 'connected' changes.
+    if (!quill || !socket) return;
+
+    // This handler is re-created every time 'connected' changes,
+    // so it always has the fresh 'connected' value from its closure.
+    const onTextChange = (delta: Delta, _old: Delta, source: string) => {
+      console.log("text-change firing..."); // For debugging
+      if (source !== "user") return;
+
+      if (!connected) {
+        console.log("...but not emitting, socket disconnected.");
+        return;
+      }
+
+      console.log("...emitting code");
+      const payload = { ops: delta.ops };
+      socket.emit("send-code", payload);
+    };
+
+    quill.on("text-change", onTextChange);
+
+    // Return a cleanup function to remove the old listener
+    // before binding the new one on the next run.
+    return () => {
+      quill.off("text-change", onTextChange);
+    };
+  }, [connected]); // Dependency array
 
   const getCurrentCode = useCallback((): string => {
     const quill = quillRef.current;
