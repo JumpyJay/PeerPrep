@@ -16,7 +16,16 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18" # use the same version as Dockerfile
+          node-version: "18"
+
+      # add caching
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm # The folder to cache
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install Dependencies
         run: npm ci
@@ -25,14 +34,15 @@ jobs:
         run: npm run lint
 
       - name: Run Build Scripts
-        # this now only run "next build --turbopack" (frontend side of things)
         run: npm run build
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --- build frontend image ---
-
+      # add build arg for docker
       - name: Build Frontend Docker Image
         run: |
-          docker build -f Dockerfile -t peerprep-frontend .
+          docker build \
+            --build-arg NEXT_PUBLIC_WEBSOCKET_SERVER_URL=https://dummy-url-for-pr.com \
+            -f Dockerfile \
+            -t peerprep-frontend .
