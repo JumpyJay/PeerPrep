@@ -10,6 +10,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# declare the build-time argument.
+ARG NEXT_PUBLIC_WEBSOCKET_SERVER_URL
+
+# Set it as an environment variable *for this build stage*.
+ENV NEXT_PUBLIC_WEBSOCKET_SERVER_URL=$NEXT_PUBLIC_WEBSOCKET_SERVER_URL
+
 RUN npm run build
 
 # ---- run ----
